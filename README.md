@@ -40,7 +40,7 @@ warning triangle when the OpenClaw gateway is down. Click any line to copy it.
 ## Install
 
 ```bash
-brew install mertegemencaliskan/tap/jarvis-switch
+brew install mertegemencaliskan/jarvis/jarvis-switch
 brew services start jarvis-switch
 ```
 
@@ -152,6 +152,6 @@ build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --status
 ```
 
 Releases: `scripts/release.sh 0.2.0` bumps `VERSION`, tags, publishes a GitHub release and updates the
-Homebrew formula in [`homebrew-tap`](https://github.com/mertegemencaliskan/homebrew-tap).
+Homebrew formula in [`homebrew-jarvis`](https://github.com/mertegemencaliskan/homebrew-jarvis).
 
 Not affiliated with OpenClaw, Splash, LM Studio or Ollama. MIT licensed.

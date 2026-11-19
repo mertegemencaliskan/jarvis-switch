@@ -2,7 +2,7 @@
 # Publish a release and update the Homebrew formula.
 #   scripts/release.sh 0.2.0
 # Needs: gh (logged in), a clean main branch, and the tap checked out at $TAP_DIR
-# (default: ../homebrew-tap next to this repo; cloned if missing).
+# (default: ../homebrew-jarvis next to this repo; cloned if missing).
 set -euo pipefail
 NEW="${1:?usage: scripts/release.sh X.Y.Z}"
 [[ "$NEW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must look like 1.2.3"; exit 1; }
@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 OWNER="${REPO%%/*}"
-TAP_DIR="${TAP_DIR:-$ROOT/../homebrew-tap}"
+TAP_DIR="${TAP_DIR:-$ROOT/../homebrew-jarvis}"
 [ -z "$(git status --porcelain)" ] || { echo "working tree not clean"; exit 1; }
 [ "$(git branch --show-current)" = main ] || { echo "release from main"; exit 1; }
 git pull --ff-only -q
@@ -27,7 +27,7 @@ gh release create "v$NEW" --title "v$NEW" --notes "$NOTES" >/dev/null
 
 URL="https://github.com/$REPO/archive/refs/tags/v$NEW.tar.gz"
 SHA="$(curl -fsSL "$URL" | shasum -a 256 | cut -d' ' -f1)"
-[ -d "$TAP_DIR/.git" ] || gh repo clone "$OWNER/homebrew-tap" "$TAP_DIR" -- -q
+[ -d "$TAP_DIR/.git" ] || gh repo clone "$OWNER/homebrew-jarvis" "$TAP_DIR" -- -q
 cd "$TAP_DIR"
 git pull --ff-only -q
 F=Formula/jarvis-switch.rb
