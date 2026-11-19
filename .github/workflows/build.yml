@@ -1,0 +1,16 @@
+name: build
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: scripts/build.sh
+      - name: Smoke test
+        run: |
+          test "$(build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --version)" = "$(tr -d '[:space:]' < VERSION)"
+          build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --status
