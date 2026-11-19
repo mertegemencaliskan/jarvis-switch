@@ -1,0 +1,19 @@
+# Jarvis Switch
+
+> Native macOS menu-bar app that shows, live, what a local OpenClaw AI assistant is doing: idle or working, running and next scheduled jobs, the active context window and whether it was compacted, the model's quantization, KV cache, live tokens per second, Mac memory used by the assistant versus free, and an estimated quality kept versus BF16. It can pause the assistant to free RAM and GPU. MIT licensed. Install: `brew install mertegemencaliskan/jarvis/jarvis-switch`, then `brew services start jarvis-switch`.
+
+Key facts for agents:
+
+- Settings file: `~/.config/jarvis-switch/config.json`, all fields optional, re-read live; schema in `config.schema.json`. Never store secrets there.
+- `jarvis-switch --doctor [--json]` checks the setup and says what to change (exit 1 if a check fails).
+- `jarvis-switch --status [--json]` prints the live status; JSON keys: state, gateway, jobs, context, model, memory, offload.
+- Model servers recognised: Splash (MLX), LM Studio, Ollama, any OpenAI-compatible server.
+- Builds with the Xcode Command Line Tools only; do not use SwiftUI @State (needs Xcode's macro plugin).
+
+## Docs
+
+- [README](https://github.com/mertegemencaliskan/jarvis-switch/blob/main/README.md): what it shows, screenshots, install, settings, quality estimates
+- [AGENTS.md](https://github.com/mertegemencaliskan/jarvis-switch/blob/main/AGENTS.md): install, configure, pause commands, status JSON, working on the code
+- [config.schema.json](https://github.com/mertegemencaliskan/jarvis-switch/blob/main/config.schema.json): settings schema
+- [CHANGELOG](https://github.com/mertegemencaliskan/jarvis-switch/blob/main/CHANGELOG.md): versions
+- [Homebrew tap](https://github.com/mertegemencaliskan/homebrew-jarvis): formula

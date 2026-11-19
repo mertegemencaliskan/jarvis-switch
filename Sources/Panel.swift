@@ -1,61 +1,57 @@
 import SwiftUI
 
+/// Measured height of the panel content, so the popover can scroll on short screens.
+/// (An ObservableObject rather than @State, so the app builds with the Command Line Tools alone.)
+final class PanelLayout: ObservableObject {
+    static let shared = PanelLayout()
+    @Published var contentHeight: CGFloat = 600
+}
+
+private struct HeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 /// The panel that opens from the menu-bar icon.
 struct PanelView: View {
     @EnvironmentObject var store: Store
     @AppStorage("showModelDetails") private var showDetails = false
+    @ObservedObject private var layout = PanelLayout.shared
+    var scrollable = true
 
     var body: some View {
+        if scrollable {
+            let maxHeight = max(400, (NSScreen.main?.visibleFrame.height ?? 900) - 40)
+            ScrollView(.vertical, showsIndicators: layout.contentHeight > maxHeight) {
+                content
+                    .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
+            }
+            .onPreferenceChange(HeightKey.self) { h in if h > 0 && abs(h - layout.contentHeight) > 0.5 { layout.contentHeight = h } }
+            .frame(width: 340, height: min(layout.contentHeight, maxHeight))
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            StatusHeader()
             SectionHeader(title: "Activity")
             activityCard
+            if let ctx = store.context, store.snap.gateway.live || ctx.live {
+                SectionHeader(title: "Context", trailing: ctx.label)
+                contextCard(ctx)
+            }
             SectionHeader(title: "Model", trailing: store.snap.model.reachable ? runtimeShort(store.snap.model.runtime) : nil)
             modelCard
             if store.resolved.offloadConfigured {
-                SectionHeader(title: "Offload")
-                offloadCard
+                SectionHeader(title: "Pause")
+                pauseCard
             }
             footer
         }
         .padding(14)
         .frame(width: 340)
-    }
-
-    // MARK: header
-
-    private var header: some View {
-        let kind = store.kind
-        return HStack(spacing: 11) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(LinearGradient(colors: [kind.color.opacity(0.95), kind.color.opacity(0.62)],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: kind.glyph)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .pulsing(kind == .working)
-            }
-            .frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(store.resolved.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
-            }
-            .layoutPriority(1)
-            Spacer(minLength: 6)
-            Pill(text: kind.title, color: kind.color)
-        }
-        .padding(.horizontal, 2)
-    }
-
-    private var subtitle: String {
-        let g = store.snap.gateway
-        if store.snap.updatedAt == .distantPast { return "Connecting to OpenClaw…" }
-        guard g.live else { return "OpenClaw gateway not running" }
-        var parts = ["OpenClaw \(g.version ?? "")".trimmingCharacters(in: .whitespaces)]
-        if let up = g.uptimeSeconds { parts.append("up \(formatDurationShort(up))") }
-        if g.ready == false { parts.append("not ready") }
-        return parts.joined(separator: " · ")
     }
 
     // MARK: activity
@@ -114,6 +110,53 @@ struct PanelView: View {
         return formatClock(at)
     }
 
+    // MARK: context
+
+    private func contextCard(_ c: ContextNow) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline) {
+                    if let t = c.tokens, let w = c.window {
+                        Text(formatTokens(t)).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text("of \(formatTokens(w)) tokens").font(.system(size: 12)).foregroundStyle(.secondary)
+                    } else if let t = c.tokens {
+                        Text("\(formatTokens(t)) tokens").font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
+                    } else {
+                        Text("Size shows at the next model call").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let t = c.tokens, let w = c.window, w > 0 {
+                        Text("\(Int((t / w * 100).rounded()))%").font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
+                    }
+                }
+                Meter(fraction: c.tokens.flatMap { t in c.window.map { t / max($0, 1) } } ?? 0, color: contextColor(c))
+                HStack(spacing: 6) {
+                    HStack(spacing: 4) {
+                        Image(systemName: c.live ? "waveform" : (c.phase == "Idle" ? "pause.circle" : "ellipsis"))
+                            .foregroundStyle(c.live ? Color.blue : Color.secondary)
+                        Text(c.phase)
+                    }
+                    Spacer()
+                    if let n = c.compactions {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(n > 0 ? Color.purple : Color.secondary)
+                            Text(n == 0 ? "Not compacted" : n == 1 ? "Compacted once" : "Compacted \(n)×")
+                        }
+                        .help("How many times OpenClaw summarised this conversation to fit the context window")
+                    }
+                }
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func contextColor(_ c: ContextNow) -> Color {
+        guard let t = c.tokens, let w = c.window, w > 0 else { return .blue }
+        let f = t / w
+        return f > 0.9 ? .red : f > 0.75 ? .orange : .blue
+    }
+
     // MARK: model
 
     @ViewBuilder private var modelCard: some View {
@@ -125,6 +168,7 @@ struct PanelView: View {
                 Text(m.modelID == nil ? "Looking for the model server of your default OpenClaw model."
                                       : "Model server: \(m.runtime)")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                memoryRow(m)
             } else {
                 HStack(alignment: .center, spacing: 8) {
                     VStack(alignment: .leading, spacing: 1) {
@@ -139,14 +183,18 @@ struct PanelView: View {
                     if let note = m.note { Badge(text: note) }
                 }
                 HStack(spacing: 7) {
-                    Tile(icon: "memorychip", label: "Memory", value: m.memoryInUse.map(formatBytes) ?? "—",
-                         note: m.memoryPressure.map(pressureLabel), noteColor: m.memoryPressure.map(pressureColor))
+                    let live = store.snap.liveTokensPerSecond
+                    Tile(icon: "speedometer", label: "Speed",
+                         value: (live ?? m.decodeTokensPerSecond).map { String(format: "%.0f tok/s", $0) } ?? "—",
+                         note: live != nil ? "live" : (m.decodeTokensPerSecond != nil ? "typical" : nil),
+                         noteColor: live != nil ? .blue : nil)
+                    Tile(icon: "timer", label: "First token",
+                         value: m.ttftSeconds.map { String(format: "%.1f s", $0) } ?? "—",
+                         note: m.ttftSeconds != nil ? "typical" : nil)
                     Tile(icon: "square.stack.3d.up", label: "KV cache", value: m.kvAllocated.map(formatBytes) ?? "—",
                          note: m.kvBits.map { $0 >= 16 ? "16-bit" : "\(Int($0))-bit" })
-                    Tile(icon: "speedometer", label: "Speed",
-                         value: m.decodeTokensPerSecond.map { String(format: "%.0f tok/s", $0) } ?? "—",
-                         note: m.ttftSeconds.map { String(format: "%.1f s to start", $0) })
                 }
+                memoryRow(m)
                 qualityRow(m)
                 DisclosureGroup(isExpanded: $showDetails) {
                     VStack(alignment: .leading, spacing: 5) { detailRows(m) }
@@ -154,6 +202,33 @@ struct PanelView: View {
                 } label: {
                     Text("Details").font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+
+    /// Mac memory as one stacked bar: Jarvis, everything else, free.
+    @ViewBuilder private func memoryRow(_ m: ModelStatus) -> some View {
+        if let mem = store.snap.memory, mem.total > 0 {
+            let jarvis = min(m.processFootprint ?? m.memoryInUse ?? 0, mem.used)
+            let other = max(0, mem.used - jarvis)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) {
+                    Text("Memory").font(.system(size: 12)).foregroundStyle(.secondary)
+                    if let p = m.memoryPressure, p.lowercased() != "normal" && p.lowercased() != "nominal" {
+                        Pill(text: pressureLabel(p), color: pressureColor(p), small: true)
+                    }
+                    Spacer()
+                    Text("\(formatBytes(mem.free)) free of \(formatBytes(mem.total))")
+                        .font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                }
+                StackedBar(parts: [(jarvis / mem.total, Color.accentColor), (other / mem.total, Color.secondary.opacity(0.55))])
+                HStack(spacing: 12) {
+                    if jarvis > 0 { LegendDot(color: .accentColor, text: "\(store.resolved.name) \(formatBytes(jarvis))") }
+                    LegendDot(color: Color.secondary.opacity(0.55), text: "Other \(formatBytes(other))")
+                    LegendDot(color: Color.primary.opacity(0.12), text: "Free \(formatBytes(mem.free))")
+                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
             }
         }
     }
@@ -187,16 +262,17 @@ struct PanelView: View {
             DetailRow(label: "KV memory", value: (m.kvActive.map { "\(formatBytes($0)) used of " } ?? "") + "\(formatBytes(a)) reserved")
         }
         if let b = m.kvBits { DetailRow(label: "KV keeps", value: "\(Quality.percent(Quality.kv(bits: b))) of BF16 (estimate)") }
-        if let c = m.contextTokens { DetailRow(label: "Context", value: "\(formatInt(c)) tokens") }
-        if let p = m.memoryPeak { DetailRow(label: "Peak memory", value: formatBytes(p)) }
+        if let c = m.contextTokens { DetailRow(label: "Max context", value: "\(formatInt(c)) tokens") }
+        if let u = m.memoryInUse { DetailRow(label: "GPU memory", value: formatBytes(u) + (m.memoryPeak.map { ", peak \(formatBytes($0))" } ?? "")) }
+        if let t = m.decodeTokensPerSecond { DetailRow(label: "Typical speed", value: String(format: "%.0f tok/s", t)) }
         if let h = m.cacheHitRate { DetailRow(label: "Prompt cache", value: String(format: "%.0f%% hits", h * 100)) }
         if let sp = m.speculative { DetailRow(label: "Speculative", value: sp ? "On (draft model)" : "Off") }
         if m.weightsReleased { DetailRow(label: "Weights", value: "Released from memory") }
     }
 
-    // MARK: offload
+    // MARK: pause
 
-    private var offloadCard: some View {
+    private var pauseCard: some View {
         let s = store.snap, r = store.resolved
         return Card {
             if let busy = store.offloadBusy {
@@ -205,19 +281,19 @@ struct PanelView: View {
                     Text(busy).font(.system(size: 13))
                 }
             } else if s.offload.active {
-                InfoRow(icon: "moon.zzz.fill", title: "Offloaded" + (s.offload.mode.map { " (\($0))" } ?? ""), tint: .indigo,
+                InfoRow(icon: "pause.circle.fill", title: "Paused" + (s.offload.mode.map { " (\($0))" } ?? ""), tint: .indigo,
                         trailing: s.offload.purpose)
                 if r.offload?.restore != nil {
                     Button { store.restore() } label: {
-                        Label("Bring \(r.name) back", systemImage: "arrow.uturn.backward")
+                        Label("Resume \(r.name)", systemImage: "play.fill")
                     }
                     .buttonStyle(PanelButtonStyle(prominent: true))
                 }
             } else {
                 HStack(spacing: 8) {
                     if r.offload?.light != nil {
-                        Button { store.offloadLight() } label: { Label("Light", systemImage: "moon") }
-                            .help(r.offload?.lightLabel ?? "Release model memory; comes back in seconds")
+                        Button { store.offloadLight() } label: { Label("Light", systemImage: "pause") }
+                            .help(r.offload?.lightLabel ?? "Release the model's memory; resumes in seconds")
                     }
                     if r.offload?.deep != nil {
                         Button { store.offloadDeep() } label: { Label("Deep", systemImage: "moon.zzz") }
@@ -225,7 +301,7 @@ struct PanelView: View {
                     }
                 }
                 .buttonStyle(PanelButtonStyle())
-                Text("Free RAM and GPU for heavy work, then bring \(r.name) back with one click.")
+                Text("Pause \(r.name) and free its memory for another task. Resume with one click.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if let res = store.result, Date().timeIntervalSince(res.at) < 600 {
@@ -286,7 +362,47 @@ struct PanelView: View {
         let t = store.snap.updatedAt
         if t == .distantPast { return "Updating…" }
         let s = max(0, now.timeIntervalSince(t))
-        return s < 2 ? "Updated just now" : "Updated \(formatDuration(s)) ago"
+        if s < 2 { return store.resolved.refreshSeconds <= 2 ? "Live" : "Updated just now" }
+        return "Updated \(formatDuration(s)) ago"
+    }
+}
+
+/// Assistant name, OpenClaw version and uptime, and the status pill.
+struct StatusHeader: View {
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        let kind = store.kind
+        HStack(spacing: 11) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(LinearGradient(colors: [kind.color.opacity(0.95), kind.color.opacity(0.62)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: kind.glyph)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .bounce(on: kind.title)
+            }
+            .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.resolved.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 6)
+            Pill(text: kind.title, color: kind.color)
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var subtitle: String {
+        let g = store.snap.gateway
+        if store.snap.updatedAt == .distantPast { return "Connecting to OpenClaw…" }
+        guard g.live else { return "OpenClaw gateway not running" }
+        var parts = ["OpenClaw \(g.version ?? "")".trimmingCharacters(in: .whitespaces)]
+        if let up = g.uptimeSeconds { parts.append("up \(formatDurationShort(up))") }
+        if g.ready == false { parts.append("not ready") }
+        return parts.joined(separator: " · ")
     }
 }
 

@@ -96,7 +96,33 @@ struct ModelStatus {
     var speculative: Bool?
     var weightsReleased = false
     var note: String?
+    /// In-flight requests (Splash reports these), for live context size and live speed.
+    var requests: [LiveRequest] = []
+    /// What the model server process takes in RAM (Activity Monitor's "Memory"), when known.
+    var processFootprint: Double?
+    var draftAcceptRate: Double?
 }
+
+struct LiveRequest {
+    let id: Int
+    let phase: String          // "prefill" (reading the prompt) or "decode" (writing)
+    let promptTokens: Double
+    let promptProcessed: Double
+    let generatedTokens: Double
+    var contextTokens: Double { promptTokens + generatedTokens }
+}
+
+/// Per-process facts that never change while the server runs (model folder, quantization, served names).
+/// Cached by pid so a 1-second refresh does not spawn `ps` or re-read files every time.
+private struct StaticModelFacts {
+    var weightsLabel: String?
+    var weightsBits: Double?
+    var weightsOnDisk: Double?
+    var speculative: Bool?
+    var servedNames: [String] = []
+}
+private var staticFacts: [Int: StaticModelFacts] = [:]
+private let staticFactsLock = NSLock()
 
 func modelRoot(_ baseURL: String) -> String {
     var s = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -143,6 +169,7 @@ func probeModel(baseURL: String?, configuredModel: String?) -> ModelStatus {
         m.modelID = (pick?["name"] as? String) ?? wanted
         if let q = j(pick, "details", "quantization_level") as? String { m.weightsLabel = q; m.weightsBits = Quality.bits(fromLabel: q) }
         m.memoryInUse = num(pick?["size_vram"]) ?? num(pick?["size"])
+        m.processFootprint = num(pick?["size"])
         m.contextTokens = num(pick?["context_length"])
         m.kvLabel = ProcessInfo.processInfo.environment["OLLAMA_KV_CACHE_TYPE"] ?? "f16 (Ollama default unless OLLAMA_KV_CACHE_TYPE is set)"
         m.kvBits = Quality.bits(fromLabel: m.kvLabel!)
@@ -193,31 +220,55 @@ private func fillSplash(_ m: inout ModelStatus, _ o: [String: Any], root: String
     if let itl = num(j(o, "metrics", "itl_ms", "p50")), itl > 0 { m.decodeTokensPerSecond = 1000 / itl }
     m.cacheHitRate = num(j(o, "cache", "hit_rate"))
     m.weightsReleased = (j(o, "weights", "released") as? Bool) == true
+    m.processFootprint = num(j(o, "memory_governor", "host_telemetry", "phys_footprint_bytes"))
+    m.requests = ((j(o, "active_requests") as? [[String: Any]]) ?? []).map { r in
+        LiveRequest(id: Int(num(r["id"]) ?? 0), phase: (r["phase"] as? String) ?? "",
+                    promptTokens: num(r["prompt_tokens"]) ?? 0, promptProcessed: num(r["prompt_processed"]) ?? 0,
+                    generatedTokens: num(r["generated_tokens"]) ?? 0)
+    }
+    guard let pid = num(j(o, "instance", "pid")).map(Int.init) else { return }
+    staticFactsLock.lock()
+    let cached = staticFacts[pid]
+    staticFactsLock.unlock()
+    let facts = cached ?? loadSplashFacts(pid: pid, root: root, modelID: m.modelID)
+    if cached == nil {
+        staticFactsLock.lock(); staticFacts = [pid: facts]; staticFactsLock.unlock()
+    }
+    m.weightsLabel = facts.weightsLabel
+    m.weightsBits = facts.weightsBits ?? m.modelID.flatMap { Quality.bits(fromLabel: $0) }
+    m.weightsOnDisk = facts.weightsOnDisk
+    m.speculative = facts.speculative
+    m.servedNames = facts.servedNames.filter { $0 != m.modelID }
+}
+
+private func loadSplashFacts(pid: Int, root: String, modelID: String?) -> StaticModelFacts {
+    var f = StaticModelFacts()
     if let names = j(parseJSON(httpGET(root + "/v1/models", timeout: 2).data), "data") as? [[String: Any]] {
-        m.servedNames = names.compactMap { $0["id"] as? String }.filter { $0 != m.modelID }
+        f.servedNames = names.compactMap { $0["id"] as? String }
     }
-    // Weight quantization comes from the model directory's config.json (MLX "quantization" block).
+    // Weight quantization comes from the model folder's config.json (MLX "quantization" block).
     // Splash runs `... -m server.server <resolved-model-dir> --flags`; `splash serve` itself takes --model-dir.
-    if let pid = num(j(o, "instance", "pid")) {
-        let cmd = runCommand(["/bin/ps", "-o", "command=", "-p", String(Int(pid))], timeout: 3).output
-        var dir: String?
-        for marker in ["server.server ", "--model-dir "] {
-            if let r = cmd.range(of: marker) {
-                var d = String(cmd[r.upperBound...])
-                if let next = d.range(of: " --") { d = String(d[..<next.lowerBound]) }
-                dir = d.trimmingCharacters(in: .whitespacesAndNewlines)
-                break
-            }
-        }
-        if let dir = dir {
-            fillWeightsFromDir(&m, dir)
-            let fm = FileManager.default
-            m.speculative = cmd.contains("--draft-model") || ((try? fm.contentsOfDirectory(atPath: dir + "/draft"))?.isEmpty == false)
-        } else {
-            m.speculative = cmd.contains("--draft-model") ? true : nil
+    let cmd = runCommand(["/bin/ps", "-o", "command=", "-p", String(pid)], timeout: 3).output
+    var dir: String?
+    for marker in ["server.server ", "--model-dir "] {
+        if let r = cmd.range(of: marker) {
+            var d = String(cmd[r.upperBound...])
+            if let next = d.range(of: " --") { d = String(d[..<next.lowerBound]) }
+            dir = d.trimmingCharacters(in: .whitespacesAndNewlines)
+            break
         }
     }
-    if m.weightsBits == nil, let id = m.modelID { m.weightsBits = Quality.bits(fromLabel: id) }
+    var tmp = ModelStatus()
+    if let dir = dir {
+        fillWeightsFromDir(&tmp, dir)
+        f.speculative = cmd.contains("--draft-model") || ((try? FileManager.default.contentsOfDirectory(atPath: dir + "/draft"))?.isEmpty == false)
+    } else {
+        f.speculative = cmd.contains("--draft-model") ? true : nil
+    }
+    f.weightsLabel = tmp.weightsLabel
+    f.weightsBits = tmp.weightsBits
+    f.weightsOnDisk = tmp.weightsOnDisk
+    return f
 }
 
 /// Reads {"quantization": {"bits": 4, "group_size": 64, "mode": "affine"}} and sums the safetensors size.

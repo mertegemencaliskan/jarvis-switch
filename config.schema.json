@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/mertegemencaliskan/jarvis-switch/main/config.schema.json",
+  "title": "Jarvis Switch settings",
+  "description": "~/.config/jarvis-switch/config.json. Every field is optional; empty fields are detected from OpenClaw. The app re-reads the file within one refresh, so no restart is needed. Never put tokens or API keys here: the app does not need them.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Link to this schema, for editors and agents."
+    },
+    "name": {
+      "type": "string",
+      "default": "Jarvis",
+      "description": "The assistant's name shown in the menu bar and panel."
+    },
+    "refreshSeconds": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 3600,
+      "default": 1,
+      "description": "How often the status refreshes. 1 = live (speed, context and memory every second). Scheduled jobs are read at most every 30 seconds whatever this is."
+    },
+    "menuBarText": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show the state as a word (Idle, Working, Paused…) next to the menu-bar icon."
+    },
+    "checkForUpdates": {
+      "type": "boolean",
+      "default": true,
+      "description": "Check GitHub releases once a day and show a banner when a newer version exists."
+    },
+    "openclawConfig": {
+      "type": "string",
+      "description": "Path to OpenClaw's config file. Default: $OPENCLAW_CONFIG_PATH, then ~/.openclaw/openclaw.json. Used for the gateway port and the default model's server address.",
+      "examples": ["~/.openclaw/openclaw.json"]
+    },
+    "openclawCLI": {
+      "type": "string",
+      "description": "Path to the openclaw command (or a wrapper script that sets OPENCLAW_STATE_DIR / OPENCLAW_CONFIG_PATH). Default: ~/.openclaw/bin/openclaw, then Homebrew paths. Used for scheduled jobs and the session store.",
+      "examples": ["~/.openclaw/bin/openclaw", "/opt/homebrew/bin/openclaw"]
+    },
+    "gatewayURL": {
+      "type": "string",
+      "description": "OpenClaw gateway address. Default: http://127.0.0.1:<gateway.port from openclaw.json>, else http://127.0.0.1:18789.",
+      "examples": ["http://127.0.0.1:18789"]
+    },
+    "modelBaseURL": {
+      "type": "string",
+      "description": "Model server address. Default: the baseUrl of the provider behind agents.defaults.model in openclaw.json. Splash, LM Studio, Ollama and OpenAI-compatible servers are recognised.",
+      "examples": ["http://127.0.0.1:8000/v1", "http://127.0.0.1:11434", "http://127.0.0.1:1234/v1"]
+    },
+    "dashboardCommand": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "What \"Open OpenClaw\" runs (argv, no shell). Default: [openclaw, \"dashboard\"].",
+      "examples": [["/usr/bin/open", "-a", "OpenClaw"]]
+    },
+    "offload": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pause / Resume buttons. Each command is an argv list run without a shell. Leave out to hide the Pause section.",
+      "properties": {
+        "light": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Light pause: free the model's memory but keep the server, e.g. unload the weights."
+        },
+        "deep": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Deep pause: stop the model server to free the most memory."
+        },
+        "restore": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Resume: bring the model back."
+        },
+        "stateFile": {
+          "type": "string",
+          "description": "File that exists while paused (optional JSON with \"mode\" and \"purpose\"). If left out, the app keeps its own marker at ~/.config/jarvis-switch/paused.json."
+        },
+        "lightLabel": { "type": "string", "description": "Hover hint for the Light button." },
+        "deepLabel": { "type": "string", "description": "Hover hint for the Deep button." }
+      }
+    }
+  }
+}

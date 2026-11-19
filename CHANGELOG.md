@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0 (2026-11-19)
+- Live by default: the status refreshes every second (adjustable from 1 second to 15 minutes).
+- New Context section: tokens in use out of the context window for the conversation the assistant is
+  working in (or the main chat), reading or writing, and whether it has been compacted.
+- Live tokens per second while the model writes, next to the typical speed and time to first token.
+- Mac memory bar: the assistant, other apps and free memory, out of total RAM.
+- "Offload" is now "Pause" / "Resume". Without a marker file of your own, the app keeps one.
+- For agents and scripts: `--status --json`, `--doctor [--json]` (with a hint for every problem),
+  `config.schema.json`, `AGENTS.md` and `llms.txt`. Settings edited outside the app apply live.
+- Settings → Connection → Test connection runs the same checks as `--doctor`.
+- New README with a hero image, light and dark screenshots, a states picture and a how-it-works diagram.
+- Fixed: the looping "working" animation kept the open panel redrawing (about a quarter of a CPU core);
+  it is now a single bounce when the state changes. The app idles at under 1% CPU, even refreshing every second.
+- Probes share one network session instead of opening one per request.
+
 ## 0.2.0 (2026-11-19)
 - New panel: a native, minimal popover in place of the plain menu. Status header with a coloured pill,
   Activity card, Model card with memory / KV cache / speed tiles and a quality-kept bar, collapsible

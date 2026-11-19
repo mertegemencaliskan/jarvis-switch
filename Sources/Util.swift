@@ -24,6 +24,17 @@ func parseJSON(_ data: Data?) -> Any? {
     return try? JSONSerialization.jsonObject(with: data)
 }
 
+/// One shared session for every probe: creating a session per request churns threads and costs real CPU
+/// when the status refreshes every second.
+private let probeSession: URLSession = {
+    let cfg = URLSessionConfiguration.ephemeral
+    cfg.connectionProxyDictionary = [:]   // local services only; never through a proxy
+    cfg.timeoutIntervalForRequest = 6
+    cfg.httpMaximumConnectionsPerHost = 2
+    cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+    return URLSession(configuration: cfg)
+}()
+
 /// Small synchronous GET with a short timeout. Called from background queues only.
 func httpGET(_ url: String, timeout: TimeInterval = 3) -> (status: Int, data: Data?) {
     guard let u = URL(string: url) else { return (0, nil) }
@@ -31,16 +42,12 @@ func httpGET(_ url: String, timeout: TimeInterval = 3) -> (status: Int, data: Da
     req.httpMethod = "GET"
     let sem = DispatchSemaphore(value: 0)
     var result: (Int, Data?) = (0, nil)
-    let cfg = URLSessionConfiguration.ephemeral
-    cfg.connectionProxyDictionary = [:]   // local services only; never through a proxy
-    cfg.timeoutIntervalForRequest = timeout
-    let session = URLSession(configuration: cfg)
-    session.dataTask(with: req) { data, resp, _ in
+    let task = probeSession.dataTask(with: req) { data, resp, _ in
         result = ((resp as? HTTPURLResponse)?.statusCode ?? 0, data)
         sem.signal()
-    }.resume()
-    _ = sem.wait(timeout: .now() + timeout + 1)
-    session.invalidateAndCancel()
+    }
+    task.resume()
+    if sem.wait(timeout: .now() + timeout + 1) == .timedOut { task.cancel() }
     return result
 }
 

@@ -2,13 +2,13 @@ import AppKit
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general = "General", connection = "Connection", offload = "Offload", about = "About"
+    case general = "General", connection = "Connection", offload = "Pause", about = "About"
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .general: return "gearshape"
         case .connection: return "point.3.connected.trianglepath.dotted"
-        case .offload: return "moon.zzz"
+        case .offload: return "pause.circle"
         case .about: return "info.circle"
         }
     }
@@ -152,14 +152,14 @@ struct FieldRow: View {
 
 struct GeneralPane: View {
     @EnvironmentObject var store: Store
-    static let intervals: [(Double, String)] = [(2, "2 seconds"), (5, "5 seconds"), (10, "10 seconds"), (30, "30 seconds"),
-                                                (60, "1 minute"), (300, "5 minutes"), (900, "15 minutes")]
+    static let intervals: [(Double, String)] = [(1, "Every second (live)"), (2, "2 seconds"), (5, "5 seconds"), (10, "10 seconds"),
+                                                (30, "30 seconds"), (60, "1 minute"), (300, "5 minutes"), (900, "15 minutes")]
 
     var body: some View {
         Form {
             Section {
                 FieldRow(title: "Assistant name", value: store.text({ $0.name }, { $0.name = $1 }), prompt: "Jarvis", width: 200)
-                Picker("Refresh status every", selection: Binding(
+                Picker("Refresh status", selection: Binding(
                     get: { store.resolved.refreshSeconds },
                     set: { v in store.update { $0.refreshSeconds = v } })) {
                     ForEach(options, id: \.0) { Text($0.1).tag($0.0) }
@@ -173,7 +173,7 @@ struct GeneralPane: View {
             } header: {
                 Text("Status")
             } footer: {
-                Text("Opening the panel always refreshes right away. Scheduled jobs are read at most every 15 seconds, because asking OpenClaw for them takes about a second.")
+                Text("Live speed, context and memory update at this rate; every second costs very little. Opening the panel always refreshes right away. Scheduled jobs are read every 30 seconds, because asking OpenClaw for them takes about a second.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Section("Updates") {
@@ -260,19 +260,12 @@ struct ConnectionPane: View {
         ui.results = []
         let r = store.resolved
         DispatchQueue.global(qos: .userInitiated).async {
-            let g = probeGateway(r.gatewayURL, withReadiness: true)
-            var out: [(Bool?, String)] = []
-            out.append((g.live, g.live ? "Gateway \(g.version ?? "") at \(r.gatewayURL)\(g.ready == false ? " (not ready)" : "")"
-                                       : "No gateway at \(r.gatewayURL)"))
-            if g.live {
-                let a = probeActivity(cli: r.cli, env: r.cliEnv)
-                out.append((a.known, a.known ? "Scheduler: \(a.jobs.count) jobs" : "Scheduler: \(a.error ?? "unavailable")"))
-            }
-            let m = probeModel(baseURL: r.providerBaseURL, configuredModel: r.primaryModel)
-            out.append((m.reachable ? true : (r.providerBaseURL == nil ? nil : false),
-                        m.reachable ? "Model: \(m.modelID ?? "?") on \(m.runtime)" : "Model: \(m.runtime)"))
+            let checks = runDoctor(r)
             DispatchQueue.main.async {
-                ui.results = out.map { TestLine(ok: $0.0, text: $0.1) }
+                ui.results = checks.map { c in
+                    TestLine(ok: c.status == .ok ? true : c.status == .fail ? false : nil,
+                             text: c.detail + (c.hint.map { " — \($0)" } ?? ""))
+                }
                 ui.testing = false
                 store.refresh(full: true)
             }
@@ -290,14 +283,14 @@ struct OffloadPane: View {
     var body: some View {
         Form {
             Section {
-                FieldRow(title: "Light offload", value: store.offloadCommand(\.light), prompt: "/path/to/script --light", monospaced: true)
-                FieldRow(title: "Deep offload", value: store.offloadCommand(\.deep), prompt: "/path/to/script --deep", monospaced: true)
-                FieldRow(title: "Bring back", value: store.offloadCommand(\.restore), prompt: "/path/to/script --restore", monospaced: true)
-                PathField(title: "Offloaded marker", value: store.offloadText(\.stateFile), prompt: "~/…/offloaded.json")
+                FieldRow(title: "Light pause", value: store.offloadCommand(\.light), prompt: "/path/to/script --light", monospaced: true)
+                FieldRow(title: "Deep pause", value: store.offloadCommand(\.deep), prompt: "/path/to/script --deep", monospaced: true)
+                FieldRow(title: "Resume", value: store.offloadCommand(\.restore), prompt: "/path/to/script --resume", monospaced: true)
+                PathField(title: "Paused marker", value: store.offloadText(\.stateFile), prompt: "~/…/paused.json")
             } header: {
                 Text("Commands")
             } footer: {
-                Text("Commands run directly, without a shell; quote arguments that contain spaces. While the marker file exists, \(store.resolved.name) shows as offloaded. A command may print a JSON line such as {\"offloaded\": true}, {\"restored\": true, \"restore_seconds\": 12} or {\"error\": \"…\"}. Leave all three empty to hide the Offload section.")
+                Text("Pausing frees \(store.resolved.name)'s memory for another task. Jarvis Switch runs your own commands for it, directly and without a shell; quote arguments that contain spaces. While the marker file exists, \(store.resolved.name) shows as paused; leave it empty and the app keeps its own. A command may print a JSON line such as {\"offloaded\": true}, {\"restored\": true, \"restore_seconds\": 12} or {\"error\": \"…\"}. Leave all three empty to hide the Pause section.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Section("Button hints") {
@@ -317,13 +310,7 @@ struct AboutPane: View {
     var body: some View {
         VStack(spacing: 14) {
             Spacer(minLength: 8)
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(LinearGradient(colors: [Color.blue, Color.indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: "brain.head.profile").font(.system(size: 34, weight: .semibold)).foregroundStyle(.white)
-            }
-            .frame(width: 72, height: 72)
-            .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+            AppGlyph(size: 72)
             VStack(spacing: 4) {
                 Text("Jarvis Switch").font(.system(size: 20, weight: .semibold))
                 Text("Version \(appVersion)").font(.system(size: 12)).foregroundStyle(.secondary)

@@ -117,6 +117,38 @@ struct Meter: View {
     }
 }
 
+/// Several coloured segments in one thin bar (e.g. Jarvis / other apps / free memory).
+struct StackedBar: View {
+    let parts: [(Double, Color)]
+
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.1))
+                HStack(spacing: 1.5) {
+                    ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                        Rectangle().fill(part.1).frame(width: max(0, g.size.width * min(max(part.0, 0), 1) - 1.5))
+                    }
+                }
+                .clipShape(Capsule())
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
+struct LegendDot: View {
+    let color: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(text).monospacedDigit().lineLimit(1)
+        }
+    }
+}
+
 /// One line in a card: icon, text, trailing detail.
 struct InfoRow: View {
     let icon: String
@@ -188,10 +220,11 @@ struct PanelButtonStyle: ButtonStyle {
 }
 
 extension View {
-    /// Gentle pulse on SF Symbols while something is happening (macOS 14+; static before that).
-    @ViewBuilder func pulsing(_ on: Bool) -> some View {
-        if #available(macOS 14.0, *), on {
-            self.symbolEffect(.pulse, options: .repeating)
+    /// One small bounce when the state changes (macOS 14+). A repeating animation would keep the panel
+    /// redrawing every frame and cost a quarter of a CPU core, so nothing loops.
+    @ViewBuilder func bounce<V: Equatable>(on value: V) -> some View {
+        if #available(macOS 14.0, *) {
+            self.symbolEffect(.bounce, value: value)
         } else {
             self
         }

@@ -1,17 +1,15 @@
 {
+  "$schema": "https://raw.githubusercontent.com/mertegemencaliskan/jarvis-switch/main/config.schema.json",
   "name": "Jarvis",
-  "gatewayURL": "http://127.0.0.1:18789",
-  "openclawCLI": "~/.openclaw/bin/openclaw",
-  "openclawConfig": "~/.openclaw/openclaw.json",
-  "modelBaseURL": "http://127.0.0.1:8000/v1",
-  "dashboardCommand": ["/usr/bin/open", "-a", "OpenClaw"],
+  "refreshSeconds": 1,
+  "menuBarText": false,
   "checkForUpdates": true,
+  "openclawConfig": "~/.openclaw/openclaw.json",
+  "openclawCLI": "~/.openclaw/bin/openclaw",
+  "dashboardCommand": ["/usr/bin/open", "-a", "OpenClaw"],
   "offload": {
-    "light": ["/path/to/your/offload-script", "--light"],
-    "deep": ["/path/to/your/offload-script", "--deep"],
-    "restore": ["/path/to/your/offload-script", "--restore"],
-    "stateFile": "~/.local/state/my-assistant/offloaded.json",
-    "lightLabel": "Offload: light (release model memory)",
-    "deepLabel": "Offload: deep (stop the model server)"
+    "light": ["/opt/homebrew/bin/ollama", "stop", "qwen3:32b"],
+    "restore": ["/usr/bin/curl", "-fsS", "http://127.0.0.1:11434/api/generate", "-d", "{\"model\": \"qwen3:32b\"}"],
+    "lightLabel": "Unload the model; it loads again on resume"
   }
 }

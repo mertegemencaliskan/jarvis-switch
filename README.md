@@ -1,97 +1,158 @@
-# Jarvis Switch
-
-A small, native macOS menu-bar app for people who run their own AI assistant on a Mac with
-[OpenClaw](https://docs.openclaw.ai) and a local model.
-
-One click on the menu-bar icon shows whether your assistant is idle or working, what it is running, and
-which model is loaded: memory, KV cache, speed, and roughly how much quality the quantization keeps
-compared with the full-precision (BF16) model. When you need your RAM and GPU back for something heavy,
-it can offload the model and bring it back.
-
 <p align="center">
-  <img src="docs/panel-dark.png" width="340" alt="Jarvis Switch panel in dark mode">
-  <img src="docs/panel-light.png" width="340" alt="Jarvis Switch panel in light mode">
+  <img src="docs/hero.png" width="100%" alt="Jarvis Switch: know what your local AI assistant is doing, right from the menu bar">
 </p>
 
-The menu-bar icon tells you the state without opening anything: a head while idle, a filled head while
-working, a moon while offloaded, a warning triangle when the OpenClaw gateway is down. Optionally it shows
-the state as a word next to the icon.
+<p align="center">
+  <a href="https://github.com/mertegemencaliskan/jarvis-switch/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mertegemencaliskan/jarvis-switch?color=4c8dff"></a>
+  <a href="https://github.com/mertegemencaliskan/jarvis-switch/actions/workflows/build.yml"><img alt="Build" src="https://github.com/mertegemencaliskan/jarvis-switch/actions/workflows/build.yml/badge.svg"></a>
+  <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-black">
+  <img alt="Install with Homebrew" src="https://img.shields.io/badge/install-Homebrew-fbb040">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+**Jarvis Switch** is a small, native macOS menu-bar app for people who run their own AI assistant on a Mac
+with [OpenClaw](https://docs.openclaw.ai) and a local model. Click the icon and see, live:
+
+- **Is it working?** Idle, working, resting, paused or offline; the jobs running now, the next one, and
+  anything that failed.
+- **How full is its head?** The active context window: tokens in use out of the window, whether it is
+  reading the prompt or writing, and whether the conversation has been compacted.
+- **How fast, and at what cost?** Live tokens per second, time to first token, and your Mac's memory split
+  into the assistant, other apps and what is still free.
+- **What exactly is loaded?** The model, its weight and KV-cache quantization, and an estimate of how much
+  quality that quantization keeps compared with the full BF16 model.
+- **Need the memory back?** Pause the assistant for a render or another big job, then resume it in one click.
+
+Built for an assistant called Jarvis; the name is a setting.
 
 ## Install
+
+### Ask your AI agent
+
+Paste this to Claude Code, Codex or your own assistant:
+
+```text
+Install Jarvis Switch from https://github.com/mertegemencaliskan/jarvis-switch on this Mac.
+Follow its AGENTS.md: install it with Homebrew, run `jarvis-switch --doctor` and fix what it reports
+in ~/.config/jarvis-switch/config.json, set up the Pause commands for my model server, then start it
+with `brew services start jarvis-switch` and show me `jarvis-switch --status`.
+```
+
+### Or yourself
 
 ```bash
 brew install mertegemencaliskan/jarvis/jarvis-switch
 brew services start jarvis-switch
 ```
 
-Homebrew builds it from source on your Mac (it needs the Xcode Command Line Tools:
-`xcode-select --install`). `brew services` starts it at login and restarts it if it crashes.
+Homebrew builds it from source on your Mac, so it needs the Xcode Command Line Tools
+(`xcode-select --install`) and you get no "unidentified developer" warning. `brew services` starts it at
+login. To update: `brew upgrade jarvis-switch && brew services restart jarvis-switch`. The panel tells you
+when a new version is out.
 
-Update:
+## A closer look
 
-```bash
-brew upgrade jarvis-switch && brew services restart jarvis-switch
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
+    <img src="docs/panel-light.png" width="340" alt="The Jarvis Switch panel">
+  </picture>
+  &nbsp;&nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-details-dark.png">
+    <img src="docs/panel-details-light.png" width="340" alt="The panel with model details open">
+  </picture>
+</p>
 
-The panel shows a banner when a newer version is out (checked once a day against GitHub releases; you can
-turn this off in Settings).
+- **Activity**: only what matters right now, such as a job running for 4 minutes or the next job in 20 minutes.
+- **Context**: the conversation the assistant is working in, how much of its context window is used,
+  reading or writing, and compacted or not. While nothing runs it shows your main chat.
+- **Model**: live speed, first-token time, KV-cache size and bits, Mac memory, and the estimated quality
+  kept. **Details** adds weight quantization, size on disk, KV format, peak memory, prompt-cache hits and
+  speculative decoding.
+- **Pause**: Light (free the model's memory) or Deep (stop the model server), then Resume.
 
-Without Homebrew: clone the repo and run `scripts/build.sh`, which builds `build/JarvisSwitch.app`.
+Everything refreshes every second by default; you can slow it down in Settings.
 
-## The panel
+### The icon tells you the state
 
-- **Header**: the assistant's name, OpenClaw version and uptime, and a status pill: Idle, Working,
-  Resting (model weights released), Offloaded or Offline.
-- **Activity**: the scheduled jobs running right now and for how long, whether the model is generating,
-  the next job, and any job whose last run failed. Only what is relevant is shown.
-- **Model**: the model and its weight bit width, three tiles (memory with system memory pressure, KV cache
-  size and bit width, decode speed with time to first token) and a bar for the estimated quality kept
-  versus BF16. **Details** opens the rest: weight quantization and size on disk, KV format and use,
-  context window, peak memory, prompt-cache hit rate, speculative decoding and served model names.
-- **Offload**: Light and Deep buttons, and Bring back while offloaded (shown only if you set it up).
-- **Settings** and **Quit**, plus **Open OpenClaw** and a refresh button.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/states-dark.png">
+    <img src="docs/states-light.png" width="540" alt="Idle, Working, Resting, Paused and Offline">
+  </picture>
+</p>
 
-<p align="center"><img src="docs/panel-details.png" width="340" alt="Model details expanded"></p>
+Optionally the menu bar shows the word too (Settings → General → Menu bar shows).
 
-## Settings
+### Settings
 
-Open **Settings** from the panel (⌘,).
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/settings-dark.png">
+    <img src="docs/settings-light.png" width="560" alt="Settings window">
+  </picture>
+</p>
 
-<p align="center"><img src="docs/settings.png" width="560" alt="Settings window"></p>
-
-- **General**: assistant name, **how often the status refreshes** (2 seconds to 15 minutes), icon only
-  or icon and status in the menu bar, daily update check.
-- **Connection**: the OpenClaw config file, the `openclaw` command, gateway and model-server addresses,
-  and what **Open OpenClaw** runs. Leave a field empty to detect it. **Test connection** checks all of it.
-- **Offload**: the commands behind the Light, Deep and Bring back buttons (see below).
+- **General**: the assistant's name, how often to refresh (every second up to every 15 minutes), icon only
+  or icon and status in the menu bar, and the daily update check.
+- **Connection**: the OpenClaw config, the `openclaw` command, and the gateway and model-server
+  addresses. Leave a field empty to detect it; **Test connection** runs the same checks as `--doctor`.
+- **Pause**: the commands behind Light, Deep and Resume.
 - **About**: version, update check and links.
 
-Opening the panel always refreshes right away. Scheduled jobs are read at most every 15 seconds, because
-asking OpenClaw for them takes about a second.
+Settings are saved to `~/.config/jarvis-switch/config.json` (schema:
+[`config.schema.json`](config.schema.json)) and picked up live, so you, a script or an agent can edit
+the file too.
 
-Settings are saved as you type to `~/.config/jarvis-switch/config.json`, so scripts and agents can change
-them too (see [`examples/config.example.json`](examples/config.example.json)).
+## How it works
 
-## What it reads
+```mermaid
+flowchart LR
+    App["Jarvis Switch<br/>menu bar"]
+    App -- "every second<br/>/healthz /startupz /readyz" --> GW["OpenClaw gateway"]
+    App -- "every 30 s<br/>openclaw cron list --json" --> Jobs["Scheduled jobs"]
+    App -- "every second, read-only<br/>session store" --> Ctx["Sessions<br/>context and compactions"]
+    App -- "every second<br/>/status · /api/ps · /api/v0/models" --> Model["Model server<br/>Splash · Ollama · LM Studio"]
+    App -- "every second" --> RAM["Mac memory"]
+    App -- "only when you click" --> Pause["Your pause and resume commands"]
+```
 
-| Source | What | How |
-|---|---|---|
-| OpenClaw gateway | version, uptime, readiness, failing channels | `GET /startupz`, `/healthz`, `/readyz` (no token needed) |
-| OpenClaw scheduler | running jobs and for how long, next job, last failures | `openclaw cron list --json` |
-| Model server | everything in the Model section | the provider `baseUrl` of your default model in `openclaw.json` |
+| Model server | What it reports |
+|---|---|
+| **Splash (MLX)** | Everything: live requests and context, live speed, KV format and memory, process memory, memory pressure, prompt-cache hits, speculative decoding; weight quantization from the model folder |
+| **Ollama** | Model, quantization level, memory, context length; KV type from `OLLAMA_KV_CACHE_TYPE` (f16 by default) |
+| **LM Studio** | Model, quantization, context; LM Studio does not report its KV cache |
+| **Any OpenAI-compatible server** | Model names; bit width guessed from the name |
 
-Model servers it understands:
+Cloud models show their name only. Nothing leaves your Mac except the optional daily update check to
+`api.github.com`, and the app never reads or sends your OpenClaw token or API keys.
 
-- **Splash (MLX)**: `/status`, plus the model folder's `config.json` for weight quantization. Gives the
-  richest detail: KV format and memory, memory pressure, speed, cache hit rate, speculative decoding.
-- **LM Studio**: `/api/v0/models` (model id, quantization, context). LM Studio does not report its KV cache.
-- **Ollama**: `/api/ps` (model, quantization level, VRAM, context). The KV type comes from `OLLAMA_KV_CACHE_TYPE` (default f16).
-- **Anything OpenAI-compatible**: `/v1/models`; the bit width is guessed from the model name.
+## For agents and scripts
 
-Cloud models (no local `baseUrl`) show the model name only.
+```bash
+jarvis-switch --status --json     # live status as JSON
+jarvis-switch --doctor --json     # setup checks with fixes; exit code 1 if something is broken
+```
 
-Nothing leaves your Mac except the optional daily update check to `api.github.com`. The app never reads
-or sends your OpenClaw token or API keys.
+<details>
+<summary>Example <code>--status --json</code> (abridged)</summary>
+
+```json
+{
+  "state": "working",
+  "jobs": { "running": [{ "name": "Morning briefing", "runningSeconds": 252 }], "next": { "name": "Inbox triage", "at": "2026-11-19T18:30:00Z" } },
+  "context": { "session": "Morning briefing", "tokens": 39032, "windowTokens": 262144, "percent": 14.9, "phase": "Writing · 612 tokens", "compacted": false },
+  "model": { "id": "mlx-community/Qwen3.8-27B-4bit", "runtime": "Splash (MLX)", "liveTokensPerSecond": 47, "estimatedQualityPercent": 97.4,
+             "weights": { "bits": 4, "label": "4-bit affine, group size 64" }, "kvCache": { "bits": 8, "label": "int8 (symmetric, f32 scales)" } },
+  "memory": { "totalBytes": 51539607552, "usedBytes": 36400000000, "assistantBytes": 24200000000 }
+}
+```
+
+</details>
+
+[`AGENTS.md`](AGENTS.md) has the full install and configuration guide for AI agents, and
+[`llms.txt`](llms.txt) is a short summary for language models.
 
 ## About the quality estimates
 
@@ -112,39 +173,33 @@ The real loss depends on the task. 4-bit models often match BF16 on reasoning an
 can lose much more on OCR-style and exact-transcription work. An 8-bit KV cache is close to lossless; a
 4-bit one costs a little more at very long contexts. Treat the figures as a guide, and test your own workload.
 
-## Offload buttons
+## Pause commands
 
-Jarvis Switch does not decide how to unload your model; it runs commands you provide in
-**Settings → Offload** (run directly, without a shell; quote arguments that contain spaces):
+Jarvis Switch does not decide how to unload your model; it runs commands you choose in **Settings →
+Pause** (directly, without a shell; quote arguments that contain spaces). For example, a light pause for
+Ollama is `ollama stop MODEL`, and for Splash it is `curl -X POST http://127.0.0.1:8000/v1/memory/release`.
+[`AGENTS.md`](AGENTS.md#pause-commands) has examples for each runtime, deep pauses and the optional JSON
+replies. If your commands do not keep a "paused" marker file themselves, the app keeps one.
 
-- **Light**, **Deep**, **Bring back**: any command or script.
-- **Offloaded marker**: while this file exists, the panel shows the assistant as offloaded and offers
-  Bring back. Its optional JSON fields `mode` and `purpose` are shown.
-- If a command prints a JSON object as its last line, the panel uses it: `{"offloaded": true}`,
-  `{"restored": true, "restore_seconds": 12, "identical_to_before": true}` or `{"error": "…"}`.
+## Troubleshooting
 
-A simple light offload for Splash is `POST /v1/memory/release`. A deep one stops the server's LaunchAgent.
-
-## Terminal
-
-```bash
-jarvis-switch --status     # print the status once (good for SSH and bug reports)
-jarvis-switch --version
-```
+- **Offline**: the OpenClaw gateway is not answering at the address in Settings → Connection. Start
+  OpenClaw, or fix the address.
+- **No jobs or context**: the `openclaw` command was not found, or it talks to a different OpenClaw
+  setup. Point Settings → Connection at the command (or wrapper script) you use yourself.
+- **No model details**: the model server is not running, or your default OpenClaw model is a cloud model.
+- **Anything else**: run `jarvis-switch --doctor`; every problem comes with a hint.
 
 ## Development
 
 ```bash
-scripts/build.sh                                           # build/JarvisSwitch.app
+scripts/build.sh                    # build/JarvisSwitch.app (Command Line Tools are enough)
+scripts/screenshots.sh              # regenerate the images in docs/ with sample data
 build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --status
-build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --render panel.png --dark --demo   # screenshot with sample data
 ```
 
-It builds with the Command Line Tools alone, so it avoids SwiftUI features that need full Xcode (such as
-`@State`, which now depends on a macro plugin that only Xcode ships).
-
-Releases: add a `## X.Y.Z` section to `CHANGELOG.md`, then `scripts/release.sh X.Y.Z` bumps `VERSION`,
-tags, publishes a GitHub release and updates the formula in
+Releases: add a `## X.Y.Z` section to [`CHANGELOG.md`](CHANGELOG.md), then `scripts/release.sh X.Y.Z`. It
+tags, publishes the GitHub release and updates the formula in
 [`homebrew-jarvis`](https://github.com/mertegemencaliskan/homebrew-jarvis).
 
-Not affiliated with OpenClaw, Splash, LM Studio or Ollama. MIT licensed.
+Not affiliated with OpenClaw, Splash, LM Studio or Ollama. [MIT licensed](LICENSE).

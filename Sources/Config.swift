@@ -17,6 +17,7 @@ struct OffloadConfig: Codable, Equatable {
 /// Settings stored in ~/.config/jarvis-switch/config.json. Edited from the Settings window; every field is
 /// optional and detected when left empty, so the file also stays easy to edit by hand or by an agent.
 struct AppConfig: Codable, Equatable {
+    var schema: String?
     var name: String?
     var refreshSeconds: Double?
     var menuBarText: Bool?
@@ -28,7 +29,29 @@ struct AppConfig: Codable, Equatable {
     var dashboardCommand: [String]?
     var offload: OffloadConfig?
 
+    enum CodingKeys: String, CodingKey {
+        case schema = "$schema"
+        case name, refreshSeconds, menuBarText, checkForUpdates, gatewayURL, openclawCLI, openclawConfig,
+             modelBaseURL, dashboardCommand, offload
+    }
+
     static let path = expandPath("~/.config/jarvis-switch/config.json")
+    static let schemaURL = "https://raw.githubusercontent.com/mertegemencaliskan/jarvis-switch/main/config.schema.json"
+
+    /// Whether the file exists, and whether it parses. A broken file falls back to defaults (and --doctor says so).
+    static func fileState() -> (exists: Bool, valid: Bool, error: String?) {
+        guard let d = FileManager.default.contents(atPath: path) else { return (false, true, nil) }
+        do {
+            _ = try JSONDecoder().decode(AppConfig.self, from: d)
+            return (true, true, nil)
+        } catch {
+            return (true, false, String(describing: error).prefix(200).description)
+        }
+    }
+
+    static func modificationDate() -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }
 
     static func load() -> AppConfig {
         if let d = FileManager.default.contents(atPath: path),
@@ -37,9 +60,11 @@ struct AppConfig: Codable, Equatable {
     }
 
     func save() {
+        var c = self
+        if c.schema == nil { c.schema = AppConfig.schemaURL }
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? enc.encode(self) else { return }
+        guard let data = try? enc.encode(c) else { return }
         let dir = (AppConfig.path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         try? (data + Data("\n".utf8)).write(to: URL(fileURLWithPath: AppConfig.path), options: .atomic)
@@ -47,9 +72,12 @@ struct AppConfig: Codable, Equatable {
 
     static func writeStarterIfMissing() {
         guard !FileManager.default.fileExists(atPath: path) else { return }
-        AppConfig(name: "Jarvis").save()
+        AppConfig(schema: schemaURL, name: "Jarvis").save()
     }
 }
+
+/// Kept by the app when the user's pause commands do not maintain a marker file of their own.
+let appPauseMarker = expandPath("~/.config/jarvis-switch/paused.json")
 
 /// Settings after auto-detection.
 struct Resolved {
@@ -66,6 +94,12 @@ struct Resolved {
     let offload: OffloadConfig?
 
     var offloadConfigured: Bool { offload?.light != nil || offload?.deep != nil || offload?.restore != nil }
+
+    /// The file whose presence means "paused": the user's own marker, or one the app keeps itself.
+    var pauseMarker: String? {
+        guard offloadConfigured else { return nil }
+        return offload?.stateFile ?? appPauseMarker
+    }
 
     static func resolve(_ c: AppConfig) -> Resolved {
         let fm = FileManager.default
@@ -95,7 +129,7 @@ struct Resolved {
         let dashboard = (c.dashboardCommand?.isEmpty == false ? c.dashboardCommand : nil) ?? cli.map { [$0, "dashboard"] }
 
         return Resolved(name: blank(c.name) ?? "Jarvis",
-                        refreshSeconds: min(max(c.refreshSeconds ?? 5, 1), 3600),
+                        refreshSeconds: min(max(c.refreshSeconds ?? 1, 1), 3600),
                         menuBarText: c.menuBarText ?? false,
                         checkForUpdates: c.checkForUpdates ?? true,
                         gatewayURL: (gateway ?? "http://127.0.0.1:18789").trimmingCharacters(in: CharacterSet(charactersIn: "/")),

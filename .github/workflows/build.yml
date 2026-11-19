@@ -12,5 +12,11 @@ jobs:
         run: scripts/build.sh
       - name: Smoke test
         run: |
-          test "$(build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --version)" = "$(tr -d '[:space:]' < VERSION)"
-          build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch --status
+          APP=build/JarvisSwitch.app/Contents/MacOS/JarvisSwitch
+          test "$($APP --version)" = "$(tr -d '[:space:]' < VERSION)"
+          $APP --status
+          $APP --status --json | python3 -m json.tool > /dev/null
+          doctor="$($APP --doctor --json || true)"
+          echo "$doctor" | python3 -m json.tool > /dev/null
+          python3 -m json.tool config.schema.json > /dev/null
+          python3 -m json.tool examples/config.example.json > /dev/null
