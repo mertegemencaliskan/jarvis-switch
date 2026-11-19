@@ -166,7 +166,8 @@ struct PanelView: View {
                 InfoRow(icon: m.modelID == nil ? "questionmark.circle" : "cloud",
                         title: m.modelID.map(shortModelName) ?? "No local model found")
                 Text(m.modelID == nil ? "Looking for the model server of your default OpenClaw model."
-                                      : "Model server: \(m.runtime)")
+                     : (store.snap.active?.fromSession == true ? "Not loaded right now; it loads when the next request arrives."
+                                                               : "Model server: \(m.runtime)"))
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 memoryRow(m)
             } else {
@@ -180,6 +181,7 @@ struct PanelView: View {
                     }
                     Spacer(minLength: 4)
                     if let b = m.weightsBits { Badge(text: b >= 16 ? "BF16" : "\(Int(b))-bit") }
+                    if let e = store.snap.active?.effort { Badge(text: effortLabel(e)).help("Thinking effort of the model in use") }
                     if let note = m.note { Badge(text: note) }
                 }
                 HStack(spacing: 7) {
@@ -253,6 +255,9 @@ struct PanelView: View {
 
     @ViewBuilder private func detailRows(_ m: ModelStatus) -> some View {
         DetailRow(label: "Runtime", value: m.runtime)
+        if let a = store.snap.active?.alias {
+            DetailRow(label: "In use", value: a + (store.snap.active?.fromSession == true ? " (running session)" : " (default)"))
+        }
         if !m.servedNames.isEmpty { DetailRow(label: "Served as", value: m.servedNames.joined(separator: ", ")) }
         DetailRow(label: "Weights", value: m.weightsLabel ?? "unknown")
         if let d = m.weightsOnDisk { DetailRow(label: "On disk", value: formatBytes(d)) }

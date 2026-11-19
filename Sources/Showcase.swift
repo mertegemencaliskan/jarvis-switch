@@ -48,6 +48,7 @@ func demoSnapshot() -> Snapshot {
                     contextTokens: 262_144, compactions: 1, updatedAt: now.addingTimeInterval(-600)),
     ]
     s.memory = SystemMemory(total: 51_539_607_552, used: 36.4e9)
+    s.active = ActiveModel(alias: "local/assistant_low", baseURL: nil, effort: "low", fromSession: true)
     s.updatedAt = now
     return s
 }

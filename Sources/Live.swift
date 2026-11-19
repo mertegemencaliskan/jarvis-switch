@@ -13,6 +13,9 @@ struct SessionInfo {
     let contextTokens: Double?   // the session's context window
     let compactions: Int
     let updatedAt: Date
+    var model: String? = nil       // the alias OpenClaw asked for, e.g. "jarvis_flash_high"
+    var provider: String? = nil    // e.g. "splash-flash"
+    var thinking: String? = nil    // effort: off, minimal, low, medium, high, xhigh
 }
 
 /// Where OpenClaw keeps the agent's session store. Asked once from `openclaw sessions --json` (its "path"),
@@ -55,7 +58,9 @@ func readSessions(_ path: String, limit: Int = 30) -> [SessionInfo]? {
                                totalTokens: fresh ? num(j(entry, "totalTokens")) : nil,
                                contextTokens: num(j(entry, "contextTokens")),
                                compactions: Int(num(j(entry, "compactionCount")) ?? 0),
-                               updatedAt: Date(timeIntervalSince1970: updated)))
+                               updatedAt: Date(timeIntervalSince1970: updated),
+                               model: j(entry, "model") as? String, provider: j(entry, "modelProvider") as? String,
+                               thinking: j(entry, "thinkingLevel") as? String))
     }
     return out
 }
@@ -95,6 +100,31 @@ func formatTokens(_ t: Double) -> String {
     if t >= 100_000 { return String(format: "%.0fK", t / 1000) }
     if t >= 1000 { return String(format: "%.1fK", t / 1000) }
     return String(Int(t))
+}
+
+/// Which model is in use and at what effort: the running session's model and thinking level, else the
+/// default model and OpenClaw's default thinking level.
+struct ActiveModel {
+    let alias: String?         // "provider/model" as OpenClaw names it
+    let baseURL: String?
+    let effort: String?
+    let fromSession: Bool
+}
+
+func activeModel(_ sessions: [SessionInfo], _ r: Resolved) -> ActiveModel {
+    if let s = sessions.first(where: { $0.running }), let p = s.provider, let m = s.model {
+        return ActiveModel(alias: "\(p)/\(m)", baseURL: r.providers[p] ?? r.providerBaseURL,
+                           effort: s.thinking ?? r.thinkingDefault, fromSession: true)
+    }
+    return ActiveModel(alias: r.primaryModel, baseURL: r.providerBaseURL, effort: r.thinkingDefault, fromSession: false)
+}
+
+func effortLabel(_ e: String) -> String {
+    switch e.lowercased() {
+    case "off", "none": return "Thinking off"
+    case "xhigh": return "XHigh effort"
+    default: return e.prefix(1).uppercased() + e.dropFirst() + " effort"
+    }
 }
 
 // MARK: - Mac memory

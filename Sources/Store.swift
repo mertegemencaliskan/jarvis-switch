@@ -7,6 +7,7 @@ struct Snapshot {
     var model = ModelStatus()
     var offload = OffloadState()
     var sessions: [SessionInfo] = []
+    var active: ActiveModel?
     var memory: SystemMemory?
     /// Tokens per second measured between the last two refreshes while the model was writing.
     var liveTokensPerSecond: Double?
@@ -210,11 +211,13 @@ final class Store: ObservableObject {
             s.gateway = probeGateway(cfg.gatewayURL, withReadiness: wantReady)
             if !wantReady { s.gateway.ready = previous.gateway.ready; s.gateway.failing = previous.gateway.failing }
             if wantJobs { s.activity = s.gateway.live ? probeActivity(cli: cfg.cli, env: cfg.cliEnv) : ActivityStatus() }
-            s.model = probeModel(baseURL: cfg.providerBaseURL, configuredModel: cfg.primaryModel)
-            s.offload = readOffloadState(cfg.pauseMarker)
-            s.memory = systemMemory()
             if wantStore, s.gateway.live { storePath = sessionStorePath(cli: cfg.cli, env: cfg.cliEnv) }
             s.sessions = storePath.flatMap { readSessions($0) } ?? []
+            let active = activeModel(s.sessions, cfg)
+            s.active = active
+            s.model = probeModel(baseURL: active.baseURL, configuredModel: active.alias)
+            s.offload = readOffloadState(cfg.pauseMarker)
+            s.memory = systemMemory()
             s.updatedAt = Date()
             s.liveTokensPerSecond = liveSpeed(previous: previous, current: s)
             let latest = wantUpdate ? latestReleaseTag(repo: repoSlug) : nil

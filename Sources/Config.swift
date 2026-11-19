@@ -92,6 +92,10 @@ struct Resolved {
     let providerBaseURL: String?     // e.g. http://127.0.0.1:8000/v1
     let dashboard: [String]?
     let offload: OffloadConfig?
+    /// provider id -> baseUrl, from openclaw.json (several local models can sit behind one router).
+    let providers: [String: String]
+    /// agents.defaults.thinkingDefault: the effort used when a session does not set its own.
+    let thinkingDefault: String?
 
     var offloadConfigured: Bool { offload?.light != nil || offload?.deep != nil || offload?.restore != nil }
 
@@ -128,13 +132,19 @@ struct Resolved {
         let cli = cliCandidates.first { fm.isExecutableFile(atPath: $0) }
         let dashboard = (c.dashboardCommand?.isEmpty == false ? c.dashboardCommand : nil) ?? cli.map { [$0, "dashboard"] }
 
+        var providers: [String: String] = [:]
+        for (id, v) in (j(oc, "models", "providers") as? [String: Any]) ?? [:] {
+            if let u = j(v, "baseUrl") as? String { providers[id] = u }
+        }
+        let thinking = j(oc, "agents", "defaults", "thinkingDefault") as? String
+
         return Resolved(name: blank(c.name) ?? "Jarvis",
                         refreshSeconds: min(max(c.refreshSeconds ?? 1, 1), 3600),
                         menuBarText: c.menuBarText ?? false,
                         checkForUpdates: c.checkForUpdates ?? true,
                         gatewayURL: (gateway ?? "http://127.0.0.1:18789").trimmingCharacters(in: CharacterSet(charactersIn: "/")),
                         cli: cli, openclawConfigPath: cfgPath, primaryModel: primary, providerBaseURL: base,
-                        dashboard: dashboard, offload: c.offload)
+                        dashboard: dashboard, offload: c.offload, providers: providers, thinkingDefault: thinking)
     }
 
     /// Environment for CLI calls, so a non-default OpenClaw config is honoured.

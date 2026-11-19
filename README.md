@@ -19,7 +19,8 @@ with [OpenClaw](https://docs.openclaw.ai) and a local model. Click the icon and 
   reading the prompt or writing, and whether the conversation has been compacted.
 - **How fast, and at what cost?** Live tokens per second, time to first token, and your Mac's memory split
   into the assistant, other apps and what is still free.
-- **What exactly is loaded?** The model, its weight and KV-cache quantization, and an estimate of how much
+- **What exactly is loaded?** The model in use right now and its thinking effort (also with several
+  models behind one router), its weight and KV-cache quantization, and an estimate of how much
   quality that quantization keeps compared with the full BF16 model.
 - **Need the memory back?** Pause the assistant for a render or another big job, then resume it in one click.
 

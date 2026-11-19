@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 (2026-11-19)
+- Shows the model actually in use and its thinking effort (Thinking off, Low, Medium, High, XHigh).
+  Both come from the running OpenClaw session (its provider, model alias and thinking level), so setups
+  with several local models behind one router, such as a dense model plus a Flash model, show the right one.
+- A model that loads on demand says so instead of looking broken.
+- `--status --json` adds `model.requestedAs`, `model.effort` and `model.activeFromSession`.
+
 ## 0.3.0 (2026-11-19)
 - Live by default: the status refreshes every second (adjustable from 1 second to 15 minutes).
 - New Context section: tokens in use out of the context window for the conversation the assistant is

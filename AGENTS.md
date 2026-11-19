@@ -12,7 +12,8 @@ A native macOS menu-bar app (Swift, MIT) for someone running their own AI assist
 - the scheduled jobs running now, the next one, and failed ones
 - the active context window (tokens used out of the window, reading or writing) and whether the
   conversation has been compacted
-- the model: id, runtime, weight and KV-cache quantization, live tokens per second, time to first token,
+- the model in use (taken from the running OpenClaw session, so several models behind one router work) and
+  its thinking effort; id, runtime, weight and KV-cache quantization, live tokens per second, time to first token,
   and an estimated quality kept versus BF16
 - Mac memory: the assistant's share, other apps and free, out of total RAM
 

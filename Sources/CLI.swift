@@ -6,15 +6,17 @@ func probeOnce(_ r: Resolved, sampleSpeed: Bool = true) -> Snapshot {
     var s = Snapshot()
     s.gateway = probeGateway(r.gatewayURL, withReadiness: true)
     s.activity = s.gateway.live ? probeActivity(cli: r.cli, env: r.cliEnv) : ActivityStatus()
-    s.model = probeModel(baseURL: r.providerBaseURL, configuredModel: r.primaryModel)
+    if s.gateway.live, let path = sessionStorePath(cli: r.cli, env: r.cliEnv) { s.sessions = readSessions(path) ?? [] }
+    let active = activeModel(s.sessions, r)
+    s.active = active
+    s.model = probeModel(baseURL: active.baseURL, configuredModel: active.alias)
     s.offload = readOffloadState(r.pauseMarker)
     s.memory = systemMemory()
-    if s.gateway.live, let path = sessionStorePath(cli: r.cli, env: r.cliEnv) { s.sessions = readSessions(path) ?? [] }
     s.updatedAt = Date()
     if sampleSpeed && s.model.requests.contains(where: { $0.phase == "decode" }) {
         Thread.sleep(forTimeInterval: 1)
         var next = s
-        next.model = probeModel(baseURL: r.providerBaseURL, configuredModel: r.primaryModel)
+        next.model = probeModel(baseURL: active.baseURL, configuredModel: active.alias)
         next.updatedAt = Date()
         next.liveTokensPerSecond = liveSpeed(previous: s, current: next)
         s = next
@@ -54,6 +56,11 @@ func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
     let m = s.model
     var model: [String: Any] = ["reachable": m.reachable, "runtime": m.runtime, "activeRequests": m.activeRequests]
     if let id = m.modelID { model["id"] = id }
+    if let a = s.active {
+        if let alias = a.alias { model["requestedAs"] = alias }
+        if let e = a.effort { model["effort"] = e }
+        model["activeFromSession"] = a.fromSession
+    }
     if !m.servedNames.isEmpty { model["servedAs"] = m.servedNames }
     var weights: [String: Any] = [:]
     if let l = m.weightsLabel { weights["label"] = l }
@@ -139,6 +146,7 @@ func statusText(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
     out.append("Model")
     if m.reachable {
         out.append("  \(m.modelID ?? "unknown") · \(m.runtime)\(m.activeRequests > 0 ? " · generating" : "")")
+        if let a = s.active { out.append("  In use: \(a.alias ?? "default")" + (a.effort.map { " · \(effortLabel($0).lowercased())" } ?? "")) }
         var w = "  Weights: \(m.weightsLabel ?? "quantization unknown")"
         if let d = m.weightsOnDisk { w += " · \(formatBytes(d)) on disk" }
         out.append(w)
