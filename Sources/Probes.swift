@@ -46,7 +46,8 @@ struct ActivityStatus {
     var error: String?
     var jobs: [Job] = []
     var running: [Job] { jobs.filter { $0.runningSince != nil } }
-    var failed: [Job] { jobs.filter { $0.enabled && $0.lastFailed } }
+    /// Jobs whose last run failed and that are not being re-run right now.
+    var failed: [Job] { jobs.filter { $0.enabled && $0.lastFailed && $0.runningSince == nil } }
     var next: Job? { jobs.filter { $0.enabled && $0.nextRun != nil }.min { $0.nextRun! < $1.nextRun! } }
 }
 
@@ -172,7 +173,15 @@ private func fillSplash(_ m: inout ModelStatus, _ o: [String: Any], root: String
     let kvFormat = j(o, "identity", "kv", "format") as? String
     let kvQuant = j(o, "identity", "kv", "quantization") as? String
     if let f = kvFormat {
-        m.kvLabel = (kvQuant ?? f).replacingOccurrences(of: "_", with: " ") + ((j(o, "identity", "kv", "scale_type") as? String).map { ", \($0) scales" } ?? "")
+        // "symmetric_int8" + "float32" -> "int8 (symmetric, f32 scales)"
+        let q = (kvQuant ?? f).lowercased()
+        var parts: [String] = []
+        if q.contains("symmetric") && !q.contains("asymmetric") { parts.append("symmetric") }
+        if q.contains("asymmetric") { parts.append("asymmetric") }
+        if let scale = j(o, "identity", "kv", "scale_type") as? String {
+            parts.append(scale.replacingOccurrences(of: "float", with: "f") + " scales")
+        }
+        m.kvLabel = f + (parts.isEmpty ? "" : " (\(parts.joined(separator: ", ")))")
         m.kvBits = Quality.bits(fromLabel: f)
     }
     m.kvAllocated = num(j(o, "kv", "allocated_bytes"))

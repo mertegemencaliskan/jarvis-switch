@@ -1,350 +1,229 @@
-// Jarvis Switch — a menu-bar status light and offload switch for a local OpenClaw assistant.
+// Jarvis Switch — menu-bar status, model details and an offload switch for a local OpenClaw assistant.
 // https://github.com/mertegemencaliskan/jarvis-switch  (MIT)
-import Cocoa
+import AppKit
+import Combine
+import SwiftUI
 
 let repoSlug = "mertegemencaliskan/jarvis-switch"
 
-struct Snapshot {
-    var gateway = GatewayStatus()
-    var activity = ActivityStatus()
-    var model = ModelStatus()
-    var offload = OffloadState()
-    var updatedAt = Date.distantPast
-}
-
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    let store = Store.shared
     var item: NSStatusItem!
-    let menu = NSMenu()
-    var cfg = Resolved.resolve(AppConfig.load())
-    var snap = Snapshot()
-    var working = false            // an offload/restore command is running
-    var resultText: String?
-    var resultAt = Date.distantPast
-    var latestVersion: String?
-    var lastReadiness = Date.distantPast
-    var lastCron = Date.distantPast
-    var lastUpdateCheck = Date.distantPast
-    let probeQueue = DispatchQueue(label: "probe", qos: .utility)
-    var probing = false
+    let popover = NSPopover()
+    var watchers = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppConfig.writeStarterIfMissing()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        menu.autoenablesItems = false
-        menu.delegate = self
-        item.menu = menu
-        setIcon("brain.head.profile", "J")
-        render()
-        refresh(full: true)
-        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh(full: false) }
-    }
+        item.button?.target = self
+        item.button?.action = #selector(togglePanel(_:))
+        item.button?.imagePosition = .imageLeading
 
-    func menuWillOpen(_ menu: NSMenu) { refresh(full: true) }
+        let host = NSHostingController(rootView: PanelView().environmentObject(store))
+        host.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = host
+        popover.behavior = .transient
+        popover.animates = true
+        popover.delegate = self
 
-    // MARK: probing
-
-    func refresh(full: Bool) {
-        guard !probing else { return }
-        probing = true
-        let cfg = self.cfg
-        let now = Date()
-        let wantReady = full || now.timeIntervalSince(lastReadiness) > 30
-        let wantCron = full || now.timeIntervalSince(lastCron) > 30
-        let wantUpdate = cfg.checkForUpdates && now.timeIntervalSince(lastUpdateCheck) > 86_400
-        probeQueue.async {
-            var s = self.snap
-            s.gateway = probeGateway(cfg.gatewayURL, withReadiness: wantReady)
-            if !wantReady { s.gateway.ready = self.snap.gateway.ready; s.gateway.failing = self.snap.gateway.failing }
-            if wantCron { s.activity = s.gateway.live ? probeActivity(cli: cfg.cli, env: cfg.cliEnv) : ActivityStatus() }
-            s.model = probeModel(baseURL: cfg.providerBaseURL, configuredModel: cfg.primaryModel)
-            s.offload = readOffloadState(cfg.offload?.stateFile)
-            s.updatedAt = Date()
-            let latest = wantUpdate ? latestReleaseTag(repo: repoSlug) : nil
-            DispatchQueue.main.async {
-                self.snap = s
-                if wantReady { self.lastReadiness = now }
-                if wantCron { self.lastCron = now }
-                if wantUpdate { self.lastUpdateCheck = now; if let l = latest { self.latestVersion = l } }
-                self.probing = false
-                self.render()
-            }
+        store.openSettings = { [weak self] in
+            self?.popover.performClose(nil)
+            if let s = self?.store { SettingsWindow.show(store: s) }
+        }
+        store.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.updateButton() } }
+            .store(in: &watchers)
+        updateButton()
+        store.start()
+        // Hidden test hooks: open the panel or Settings right after launch.
+        if CommandLine.arguments.contains("--open-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.togglePanel(nil) }
+        }
+        if CommandLine.arguments.contains("--open-settings") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.store.openSettings() }
         }
     }
 
-    // MARK: rendering
-
-    func setIcon(_ symbol: String, _ fallback: String) {
-        if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: cfg.name) {
-            img.isTemplate = true
-            item.button?.image = img
-            item.button?.title = ""
+    @objc func togglePanel(_ sender: Any?) {
+        guard let button = item.button else { return }
+        if popover.isShown {
+            popover.performClose(sender)
         } else {
-            item.button?.image = nil
-            item.button?.title = fallback
+            store.refresh(full: true)
+            NSApp.activate(ignoringOtherApps: true)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
         }
     }
 
-    func headline() -> (String, String, String) {
-        let s = snap, n = cfg.name
-        if working { return ("\(n): working on your request…", "hourglass", "J…") }
-        if s.updatedAt == .distantPast { return ("\(n): checking…", "brain.head.profile", "J") }
-        if s.offload.active {
-            let mode = s.offload.mode.map { " (\($0))" } ?? ""
-            let why = s.offload.purpose.map { ": \($0)" } ?? ""
-            return ("\(n) offloaded\(mode)\(why)", s.offload.mode == "deep" ? "moon.zzz.fill" : "moon.zzz", "J○")
-        }
-        if !s.gateway.live { return ("\(n): gateway not running", "exclamationmark.triangle", "J!") }
-        let busy = !s.activity.running.isEmpty || s.model.activeRequests > 0
-        if busy { return ("\(n): working", "brain.head.profile.fill", "J●") }
-        if s.model.weightsReleased { return ("\(n): idle, model weights released", "moon.zzz", "J○") }
-        return ("\(n): idle", "brain.head.profile", "J")
-    }
-
-    var textLines: [String]? = nil   // when set, render() records lines instead of building the menu
-
-    func info(_ text: String, indent: Int = 0, copy: Bool = true) -> NSMenuItem {
-        textLines?.append(String(repeating: "  ", count: indent) + text)
-        let it = NSMenuItem(title: text, action: copy ? #selector(copyLine(_:)) : nil, keyEquivalent: "")
-        it.target = self
-        it.indentationLevel = indent
-        it.isEnabled = copy
-        it.toolTip = copy ? "Click to copy" : nil
-        return it
-    }
-
-    func header(_ text: String) -> NSMenuItem {
-        textLines?.append(text)
-        let it = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-        it.isEnabled = false
-        it.attributedTitle = NSAttributedString(string: text, attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
-        return it
-    }
-
-    func render() {
-        let (title, symbol, fallback) = headline()
-        if item != nil {
-            setIcon(symbol, fallback)
-            item.button?.toolTip = title
-        }
-        menu.removeAllItems()
-        let s = snap
-        menu.addItem(header(title))
-
-        // OpenClaw
-        if s.gateway.live {
-            var g = "OpenClaw \(s.gateway.version ?? "")"
-            if let up = s.gateway.uptimeSeconds { g += " · up \(formatDuration(up))" }
-            if let ready = s.gateway.ready { g += ready ? " · ready" : " · NOT ready" }
-            menu.addItem(info(g, indent: 1))
-            if !s.gateway.failing.isEmpty { menu.addItem(info("Failing: \(s.gateway.failing.joined(separator: ", "))", indent: 1)) }
-        } else if s.updatedAt != .distantPast {
-            menu.addItem(info("OpenClaw gateway unreachable at \(cfg.gatewayURL)", indent: 1))
-        }
-
-        // Activity
-        if s.activity.known {
-            if s.activity.running.isEmpty {
-                menu.addItem(info("No scheduled job running", indent: 1))
-            }
-            for jb in s.activity.running {
-                menu.addItem(info("Running: \(jb.name) (\(formatDuration(Date().timeIntervalSince(jb.runningSince!))))", indent: 1))
-            }
-            if let nx = s.activity.next, let at = nx.nextRun {
-                menu.addItem(info("Next: \(nx.name) at \(formatClock(at))", indent: 1))
-            }
-            let failed = s.activity.failed
-            if !failed.isEmpty {
-                menu.addItem(info("Last run failed: \(failed.map(\.name).joined(separator: ", "))", indent: 1))
-            }
-        } else if let e = s.activity.error, s.gateway.live {
-            menu.addItem(info("Jobs: \(e)", indent: 1))
-        }
-        if s.model.reachable {
-            let gen = s.model.activeRequests > 0 ? "generating (\(s.model.activeRequests) request\(s.model.activeRequests == 1 ? "" : "s"))" : "idle"
-            menu.addItem(info("Model: \(gen)", indent: 1))
-        }
-
-        // Model details
-        menu.addItem(.separator())
-        menu.addItem(header("Model"))
-        addModelLines(s.model)
-
-        // Offload
-        if let off = cfg.offload, off.light != nil || off.deep != nil || off.restore != nil {
-            menu.addItem(.separator())
-            menu.addItem(header("Offload"))
-            let offloaded = s.offload.active
-            if let _ = off.light {
-                menu.addItem(action(off.lightLabel ?? "Offload: light (release model memory)", #selector(light), enabled: !working && !offloaded))
-            }
-            if let _ = off.deep {
-                menu.addItem(action(off.deepLabel ?? "Offload: deep (stop the model server)", #selector(deep), enabled: !working && !offloaded))
-            }
-            if let _ = off.restore {
-                menu.addItem(action("Bring \(cfg.name) back", #selector(back), enabled: !working && offloaded))
-            }
-        }
-        if let r = resultText, Date().timeIntervalSince(resultAt) < 600 { menu.addItem(info(r, indent: 1)) }
-
-        // Footer
-        menu.addItem(.separator())
-        if cfg.dashboard != nil { menu.addItem(action("Open OpenClaw", #selector(openDashboard), enabled: true)) }
-        menu.addItem(action("Refresh now", #selector(refreshNow), enabled: true, key: "r"))
-        menu.addItem(action("Edit settings…", #selector(editSettings), enabled: true, key: ","))
-        let version = appVersion
-        if let l = latestVersion, isNewer(l, than: version) {
-            menu.addItem(action("Update available: \(l) (copy brew command)", #selector(copyUpgrade), enabled: true))
-        }
-        menu.addItem(action("About Jarvis Switch \(version)", #selector(openRepo), enabled: true))
-        menu.addItem(action("Quit", #selector(NSApplication.terminate(_:)), enabled: true, key: "q", target: NSApp))
-    }
-
-    func addModelLines(_ m: ModelStatus) {
-        guard m.reachable else {
-            menu.addItem(info(m.modelID.map { "\($0) · \(m.runtime)" } ?? "Model server: \(m.runtime)", indent: 1))
-            return
-        }
-        menu.addItem(info("Runtime: \(m.runtime)", indent: 1))
-        if let id = m.modelID { menu.addItem(info("Model: \(id)", indent: 1)) }
-        if !m.servedNames.isEmpty { menu.addItem(info("Served as: \(m.servedNames.joined(separator: ", "))", indent: 1)) }
-        if let note = m.note { menu.addItem(info(note, indent: 1)) }
-
-        var w = "Weights: \(m.weightsLabel ?? "quantization unknown")"
-        if let d = m.weightsOnDisk { w += " · \(formatBytes(d)) on disk" }
-        menu.addItem(info(w, indent: 1))
-        if let b = m.weightsBits {
-            menu.addItem(info("Est. quality vs BF16: \(Quality.percent(Quality.weights(bits: b))) (rough estimate)", indent: 2))
-        }
-
-        var kv = "KV cache: \(m.kvLabel ?? "not reported")"
-        if let a = m.kvAllocated { kv += " · \(formatBytes(a)) reserved" }
-        if let act = m.kvActive { kv += ", \(formatBytes(act)) in use" }
-        menu.addItem(info(kv, indent: 1))
-        if let b = m.kvBits {
-            menu.addItem(info("Est. KV quality vs BF16 cache: \(Quality.percent(Quality.kv(bits: b))) (rough estimate)", indent: 2))
-        }
-        if let w = m.weightsBits, let k = m.kvBits {
-            let combined = Quality.weights(bits: w) * Quality.kv(bits: k) / 100
-            menu.addItem(info("Combined estimate: \(Quality.percent(combined)) of full-precision quality", indent: 2))
-        }
-        if let c = m.contextTokens { menu.addItem(info("Context window: \(formatInt(c)) tokens", indent: 1)) }
-
-        var mem = "Memory: "
-        if let u = m.memoryInUse { mem += "\(formatBytes(u)) in use" } else { mem += "not reported" }
-        if let p = m.memoryPeak { mem += " (peak \(formatBytes(p)))" }
-        if let pr = m.memoryPressure { mem += " · system pressure \(pr)" }
-        menu.addItem(info(mem, indent: 1))
-        if m.weightsReleased { menu.addItem(info("Weights released from memory (light offload)", indent: 1)) }
-
-        var speed: [String] = []
-        if let t = m.ttftSeconds { speed.append(String(format: "first token %.1f s", t)) }
-        if let tps = m.decodeTokensPerSecond { speed.append(String(format: "%.0f tok/s", tps)) }
-        if !speed.isEmpty { menu.addItem(info("Speed (median): " + speed.joined(separator: " · "), indent: 1)) }
-        var extra: [String] = []
-        if let h = m.cacheHitRate { extra.append(String(format: "prompt cache hit rate %.0f%%", h * 100)) }
-        if let sp = m.speculative { extra.append(sp ? "speculative decoding on" : "speculative decoding off") }
-        if !extra.isEmpty { menu.addItem(info(extra.joined(separator: " · ").capitalizedFirst, indent: 1)) }
-    }
-
-    func action(_ title: String, _ sel: Selector, enabled: Bool, key: String = "", target: AnyObject? = nil) -> NSMenuItem {
-        if textLines != nil && sel != #selector(openDashboard) && sel != #selector(refreshNow) && sel != #selector(editSettings) && sel != #selector(openRepo) && sel != #selector(NSApplication.terminate(_:)) {
-            textLines?.append("  [\(enabled ? "x" : " ")] " + title)
-        }
-        let it = NSMenuItem(title: title, action: sel, keyEquivalent: key)
-        it.target = target ?? self
-        it.isEnabled = enabled
-        return it
-    }
-
-    // MARK: actions
-
-    @objc func copyLine(_ sender: NSMenuItem) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(sender.title, forType: .string)
-    }
-
-    @objc func refreshNow() { refresh(full: true) }
-
-    @objc func editSettings() {
-        AppConfig.writeStarterIfMissing()
-        NSWorkspace.shared.open(URL(fileURLWithPath: AppConfig.path))
-        // Settings are re-read on the next refresh after the editor saves.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.cfg = Resolved.resolve(AppConfig.load()) }
-    }
-
-    @objc func openDashboard() {
-        guard let cmd = cfg.dashboard else { return }
-        let env = cfg.cliEnv
-        DispatchQueue.global().async { _ = runCommand(cmd, timeout: 30, env: env) }
-    }
-
-    @objc func openRepo() { NSWorkspace.shared.open(URL(string: "https://github.com/\(repoSlug)")!) }
-
-    @objc func copyUpgrade() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("brew upgrade jarvis-switch && brew services restart jarvis-switch", forType: .string)
-    }
-
-    @objc func light() { runOffload(cfg.offload?.light, busy: "Offloading (light)…") }
-    @objc func deep() { runOffload(cfg.offload?.deep, busy: "Offloading (deep)…") }
-    @objc func back() { runOffload(cfg.offload?.restore, busy: "Bringing \(cfg.name) back…") }
-
-    func runOffload(_ argv: [String]?, busy: String) {
-        guard let argv = argv, !argv.isEmpty, !working else { return }
-        working = true
-        resultText = busy
-        resultAt = Date()
-        render()
-        let env = cfg.cliEnv
-        DispatchQueue.global(qos: .userInitiated).async {
-            let r = runCommand(argv.map(expandPath), timeout: 900, env: env)
-            let o = lastJSONObject(r.output)
-            let summary = AppDelegate.summarize(o, code: r.code, raw: r.output)
-            DispatchQueue.main.async {
-                self.working = false
-                self.resultText = summary
-                self.resultAt = Date()
-                self.refresh(full: true)
-            }
-        }
-    }
-
-    static func summarize(_ o: [String: Any]?, code: Int32, raw: String) -> String {
-        guard let o = o else {
-            let tail = raw.split(separator: "\n").last.map(String.init) ?? ""
-            return code == 0 ? "Done" : "Failed (exit \(code)): \(tail.prefix(120))"
-        }
-        if (o["restored"] as? Bool) == true {
-            var t = "Back"
-            if let s = num(o["restore_seconds"]) { t += String(format: " in %.0f s", s) }
-            if let same = o["identical_to_before"] as? Bool { t += same ? ", identical to before" : ", CHANGED (check logs)" }
-            return t
-        }
-        if (o["offloaded"] as? Bool) == true { return "Offloaded" + ((o["restore_by"] as? String).map { "; returns by \($0) at the latest" } ?? "") }
-        if let e = o["error"] ?? o["reason"] { return "Not done: \(e)" }
-        return code == 0 ? "Done" : "Failed (exit \(code))"
+    func updateButton() {
+        guard let button = item?.button else { return }
+        let kind = store.kind
+        let img = NSImage(systemSymbolName: kind.menuSymbol, accessibilityDescription: store.resolved.name)
+        img?.isTemplate = true
+        button.image = img
+        button.title = store.resolved.menuBarText ? " \(kind.title)" : ""
+        button.toolTip = "\(store.resolved.name): \(kind.title)"
     }
 }
 
-extension String {
-    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
-}
+// MARK: - Command line: --version, --status, --render
 
-if CommandLine.arguments.contains("--version") { print(appVersion); exit(0) }
-if CommandLine.arguments.contains("--status") {
-    // Print the menu contents once and exit: handy over SSH and for bug reports.
-    let d = AppDelegate()
+/// One-shot synchronous probe for the command-line modes.
+func probeOnce(_ store: Store) -> Snapshot {
+    let r = store.resolved
     var s = Snapshot()
-    s.gateway = probeGateway(d.cfg.gatewayURL, withReadiness: true)
-    s.activity = s.gateway.live ? probeActivity(cli: d.cfg.cli, env: d.cfg.cliEnv) : ActivityStatus()
-    s.model = probeModel(baseURL: d.cfg.providerBaseURL, configuredModel: d.cfg.primaryModel)
-    s.offload = readOffloadState(d.cfg.offload?.stateFile)
+    s.gateway = probeGateway(r.gatewayURL, withReadiness: true)
+    s.activity = s.gateway.live ? probeActivity(cli: r.cli, env: r.cliEnv) : ActivityStatus()
+    s.model = probeModel(baseURL: r.providerBaseURL, configuredModel: r.primaryModel)
+    s.offload = readOffloadState(r.offload?.stateFile)
     s.updatedAt = Date()
-    d.snap = s
-    d.textLines = []
-    d.render()
-    let footer = ["Open OpenClaw", "Refresh now", "Edit settings…", "Quit"]
-    print(d.textLines!.filter { line in !footer.contains(where: { line.hasPrefix($0) }) }.joined(separator: "\n"))
+    return s
+}
+
+func statusText(_ store: Store, _ s: Snapshot) -> String {
+    var out: [String] = []
+    let r = store.resolved
+    out.append("\(r.name): \(store.kind.title)")
+    if s.gateway.live {
+        var g = "  OpenClaw \(s.gateway.version ?? "")"
+        if let up = s.gateway.uptimeSeconds { g += " · up \(formatDuration(up))" }
+        if let ready = s.gateway.ready { g += ready ? " · ready" : " · NOT ready" }
+        out.append(g)
+    } else {
+        out.append("  OpenClaw gateway not running at \(r.gatewayURL)")
+    }
+    for jb in s.activity.running { out.append("  Running: \(jb.name) (\(formatDuration(Date().timeIntervalSince(jb.runningSince!))))") }
+    if s.activity.known && s.activity.running.isEmpty { out.append("  Nothing running") }
+    if let nx = s.activity.next, let at = nx.nextRun { out.append("  Next: \(nx.name) at \(formatClock(at))") }
+    if !s.activity.failed.isEmpty { out.append("  Last run failed: \(s.activity.failed.map(\.name).joined(separator: ", "))") }
+    if let e = s.activity.error { out.append("  Jobs: \(e)") }
+    let m = s.model
+    out.append("Model")
+    if m.reachable {
+        out.append("  \(m.modelID ?? "unknown") · \(m.runtime)\(m.activeRequests > 0 ? " · generating" : "")")
+        var w = "  Weights: \(m.weightsLabel ?? "quantization unknown")"
+        if let d = m.weightsOnDisk { w += " · \(formatBytes(d)) on disk" }
+        out.append(w)
+        var kv = "  KV cache: \(m.kvLabel ?? "not reported")"
+        if let a = m.kvAllocated { kv += " · \(formatBytes(a)) reserved" }
+        out.append(kv)
+        if let b = m.weightsBits {
+            let weights = Quality.weights(bits: b), kvq = m.kvBits.map { Quality.kv(bits: $0) }
+            var q = "  Quality kept vs BF16 (estimate): \(Quality.percent(weights * (kvq ?? 100) / 100))"
+            q += " (weights \(Quality.percent(weights))" + (kvq.map { ", KV \(Quality.percent($0))" } ?? "") + ")"
+            out.append(q)
+        }
+        var mem = "  Memory: \(m.memoryInUse.map(formatBytes) ?? "not reported")"
+        if let p = m.memoryPressure { mem += " · pressure \(p)" }
+        out.append(mem)
+        if let tps = m.decodeTokensPerSecond { out.append(String(format: "  Speed: %.0f tok/s", tps) + (m.ttftSeconds.map { String(format: " · %.1f s to first token", $0) } ?? "")) }
+    } else {
+        out.append("  \(m.modelID.map { "\($0) · " } ?? "")\(m.runtime)")
+    }
+    if r.offloadConfigured {
+        out.append("Offload: " + (s.offload.active ? "offloaded" + (s.offload.mode.map { " (\($0))" } ?? "") : "available"))
+    }
+    return out.joined(separator: "\n")
+}
+
+/// Sample data for screenshots, so no real job names or paths end up in public images.
+func demoSnapshot() -> Snapshot {
+    var s = Snapshot()
+    s.gateway = GatewayStatus(live: true, ready: true, failing: [], version: "2026.11.5", uptimeSeconds: 3 * 3600 + 1200)
+    let now = Date()
+    s.activity.known = true
+    s.activity.jobs = [
+        Job(name: "Morning briefing", runningSince: now.addingTimeInterval(-252), nextRun: nil, lastFailed: false, enabled: true),
+        Job(name: "Inbox triage", runningSince: nil, nextRun: now.addingTimeInterval(1260), lastFailed: false, enabled: true),
+    ]
+    var m = ModelStatus()
+    m.reachable = true
+    m.runtime = "Splash (MLX)"
+    m.modelID = "mlx-community/Qwen3.8-27B-4bit"
+    m.servedNames = ["assistant", "assistant_fast"]
+    m.weightsLabel = "4-bit affine, group size 64"
+    m.weightsBits = 4
+    m.weightsOnDisk = 15.4e9
+    m.kvLabel = "int8 (symmetric, f32 scales)"
+    m.kvBits = 8
+    m.kvAllocated = 4.8e9
+    m.kvActive = 1.3e9
+    m.contextTokens = 262_144
+    m.memoryInUse = 23.6e9
+    m.memoryPeak = 28.1e9
+    m.memoryPressure = "normal"
+    m.activeRequests = 1
+    m.ttftSeconds = 1.9
+    m.decodeTokensPerSecond = 44
+    m.cacheHitRate = 0.99
+    m.speculative = true
+    s.model = m
+    s.updatedAt = now
+    return s
+}
+
+/// Render a SwiftUI view to PNG (used for README screenshots and design checks).
+func renderPNG<V: View>(_ view: V, appearance: NSAppearance.Name, to path: String) {
+    let host = NSHostingView(rootView: view)
+    host.appearance = NSAppearance(named: appearance)
+    let size = host.fittingSize
+    host.frame = NSRect(origin: .zero, size: size)
+    let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: appearance)
+    window.contentView = host
+    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+    window.orderFrontRegardless()
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+    guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+    host.cacheDisplay(in: host.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: expandPath(path)))
+    window.orderOut(nil)
+}
+
+/// Panel and Settings framed like they appear on screen.
+struct PreviewFrame<Content: View>: View {
+    let content: Content
+    var body: some View {
+        content
+            .background(Color(nsColor: .windowBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+            .padding(18)
+    }
+}
+
+let args = CommandLine.arguments
+func argValue(_ flag: String) -> String? {
+    guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+    return args[i + 1]
+}
+
+if args.contains("--version") { print(appVersion); exit(0) }
+
+if args.contains("--status") {
+    let store = Store.shared
+    store.setSnapshotForCLI(probeOnce(store))
+    print(statusText(store, store.snap))
+    exit(0)
+}
+
+if let target = argValue("--render") {
+    // --render out.png [--dark] [--settings general|connection|offload|about] [--details]
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.prohibited)
+    let store = Store.shared
+    store.setSnapshotForCLI(args.contains("--demo") ? demoSnapshot() : probeOnce(store))
+    let appearance: NSAppearance.Name = args.contains("--dark") ? .darkAqua : .aqua
+    UserDefaults.standard.set(args.contains("--details"), forKey: "showModelDetails")
+    if let tabName = argValue("--settings"), let tab = SettingsTab.allCases.first(where: { $0.rawValue.lowercased() == tabName.lowercased() }) {
+        SettingsUI.shared.tab = tab
+        renderPNG(PreviewFrame(content: SettingsView().environmentObject(store)), appearance: appearance, to: target)
+    } else {
+        renderPNG(PreviewFrame(content: PanelView().environmentObject(store)), appearance: appearance, to: target)
+    }
     exit(0)
 }
 

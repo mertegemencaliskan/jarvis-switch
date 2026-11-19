@@ -102,6 +102,15 @@ func formatDuration(_ seconds: Double) -> String {
     return "\(s / 86400) d \(s % 86400 / 3600) h"
 }
 
+/// Compact form for tight spots: "45 s", "12 min", "18 h", "3 d".
+func formatDurationShort(_ seconds: Double) -> String {
+    let s = Int(max(0, seconds))
+    if s < 60 { return "\(s) s" }
+    if s < 3600 { return "\(s / 60) min" }
+    if s < 86400 { return "\(s / 3600) h" }
+    return "\(s / 86400) d"
+}
+
 func formatClock(_ date: Date) -> String {
     let f = DateFormatter()
     f.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : "EEE HH:mm"
