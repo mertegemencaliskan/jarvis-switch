@@ -182,6 +182,16 @@ Ollama is `ollama stop MODEL`, and for Splash it is `curl -X POST http://127.0.0
 [`AGENTS.md`](AGENTS.md#pause-commands) has examples for each runtime, deep pauses and the optional JSON
 replies. If your commands do not keep a "paused" marker file themselves, the app keeps one.
 
+## Mobile companion
+
+Want to check your assistant from your phone on the same Wi-Fi (or over Tailscale)? `mobile/` includes a tiny, zero-dependency read-only web companion powered by `JarvisSwitch --companion-stream`:
+
+```bash
+bash mobile/install.sh /path/to/openclaw.sqlite /path/to/openclaw-agent.sqlite
+```
+
+It installs a LaunchAgent bound to your LAN interface with a generated bearer key (and optional Tailnet listener), shares the menu bar's live model sample without extra polling, and supports an optional `--metrics-dir` flag to show a **Learning & Hygiene** card (24h clean-run rate, benchmark score, and cleanup receipts).
+
 ## Troubleshooting
 
 - **Offline**: the OpenClaw gateway is not answering at the address in Settings → Connection. Start

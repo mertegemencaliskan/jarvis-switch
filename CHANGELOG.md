@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 (2026-11-22)
+- Read-only **Mobile companion** (`mobile/` + `--companion-stream`): view live status, context, model metrics, and full schedule from your phone on your local LAN or Tailnet, protected by a per-install viewer key / HttpOnly cookie or Tailscale identity header (`mobile/install.sh`).
+- Shared menu-bar model sample (`CompanionModelSample`) so the mobile companion reuses the menu bar's live reading without double-probing your model server.
+- Optional **Learning & Hygiene** card (`--metrics-dir`, `GET /api/learning`): displays 24h clean-run rate, offline benchmark score, and auto-cleanup receipts when configured; stays hidden automatically otherwise.
+- Quiet client-disconnect handling in `mobile/server.py` (suppresses harmless `ConnectionResetError`, `BrokenPipeError`, and `TimeoutError` tracebacks when mobile browsers drop keep-alive sockets).
+- Refreshed light/dark screenshots and improved model/probe reporting.
+
 ## 0.4.0 (2026-11-19)
 - Shows the model actually in use and its thinking effort (Thinking off, Low, Medium, High, XHigh).
   Both come from the running OpenClaw session (its provider, model alias and thinking level), so setups

@@ -93,6 +93,15 @@ Docs: https://github.com/\(repoSlug)
 if args.contains("--help") || args.contains("-h") { print(usage); exit(0) }
 if args.contains("--version") { print(appVersion); exit(0) }
 
+if args.contains("--companion-stream") {
+    guard let cronDB = argValue("--cron-db"), let sessionDB = argValue("--session-db") else {
+        FileHandle.standardError.write(Data("Expected --cron-db and --session-db\n".utf8))
+        exit(2)
+    }
+    streamCompanionStatus(cronDB: cronDB, sessionDB: sessionDB)
+    exit(0)
+}
+
 if args.contains("--status") {
     let r = Resolved.resolve(AppConfig.load())
     let snap = probeOnce(r)

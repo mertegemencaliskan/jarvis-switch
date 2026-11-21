@@ -31,7 +31,8 @@ private let iso: ISO8601DateFormatter = {
 }()
 
 /// Machine-readable status (`jarvis-switch --status --json`). Missing values are left out, never guessed.
-func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool, gatewayURL: String) -> [String: Any] {
+func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool, gatewayURL: String,
+                lastLive: [String: Double] = [:]) -> [String: Any] {
     var out: [String: Any] = [
         "name": name,
         "state": kind.title.lowercased(),
@@ -55,7 +56,7 @@ func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
 
     let m = s.model
     var model: [String: Any] = ["reachable": m.reachable, "runtime": m.runtime, "activeRequests": m.activeRequests]
-    if let id = m.modelID { model["id"] = id }
+    if let id = m.modelID { model["id"] = id; model["displayName"] = shortModelName(id) }
     if let a = s.active {
         if let alias = a.alias { model["requestedAs"] = alias }
         if let e = a.effort { model["effort"] = e }
@@ -64,7 +65,9 @@ func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
     if !m.servedNames.isEmpty { model["servedAs"] = m.servedNames }
     var weights: [String: Any] = [:]
     if let l = m.weightsLabel { weights["label"] = l }
-    if let b = m.weightsBits { weights["bits"] = b; weights["estimatedQualityPercent"] = Quality.weights(bits: b) }
+    if let badge = m.weightBadge { weights["badge"] = badge }
+    if let b = m.weightsBits { weights["bits"] = b }
+    if let kept = m.weightQuality { weights["estimatedQualityPercent"] = kept }
     if let d = m.weightsOnDisk { weights["bytesOnDisk"] = Int(d) }
     if !weights.isEmpty { model["weights"] = weights }
     var kv: [String: Any] = [:]
@@ -73,8 +76,8 @@ func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
     if let a = m.kvAllocated { kv["reservedBytes"] = Int(a) }
     if let u = m.kvActive { kv["usedBytes"] = Int(u) }
     if !kv.isEmpty { model["kvCache"] = kv }
-    if let w = m.weightsBits {
-        let combined = Quality.weights(bits: w) * (m.kvBits.map { Quality.kv(bits: $0) } ?? 100) / 100
+    if let kept = m.weightQuality {
+        let combined = kept * (m.kvBits.map { Quality.kv(bits: $0) } ?? 100) / 100
         model["estimatedQualityPercent"] = (combined * 10).rounded() / 10
         model["qualityNote"] = "Rough estimate versus BF16 from published quantization studies; not measured on this model."
     }
@@ -91,7 +94,7 @@ func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
     if let f = m.processFootprint { model["processMemoryBytes"] = Int(f) }
     out["model"] = model
 
-    if let c = contextNow(s, lastLive: [:]) {
+    if let c = contextNow(s, lastLive: lastLive) {
         var ctx: [String: Any] = ["session": c.label, "phase": c.phase, "live": c.live]
         if let t = c.tokens { ctx["tokens"] = Int(t) }
         if let w = c.window { ctx["windowTokens"] = Int(w) }
@@ -153,8 +156,8 @@ func statusText(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
         var kv = "  KV cache: \(m.kvLabel ?? "not reported")"
         if let a = m.kvAllocated { kv += " · \(formatBytes(a)) reserved" }
         out.append(kv)
-        if let b = m.weightsBits {
-            let weights = Quality.weights(bits: b), kvq = m.kvBits.map { Quality.kv(bits: $0) }
+        if let weights = m.weightQuality {
+            let kvq = m.kvBits.map { Quality.kv(bits: $0) }
             var q = "  Quality kept vs BF16 (estimate): \(Quality.percent(weights * (kvq ?? 100) / 100))"
             q += " (weights \(Quality.percent(weights))" + (kvq.map { ", KV \(Quality.percent($0))" } ?? "") + ")"
             out.append(q)

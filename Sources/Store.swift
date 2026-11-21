@@ -82,6 +82,8 @@ func symbol(_ name: String, or fallback: String) -> String {
 
 /// Generated tokens since the previous refresh, per second; smoothed a little so the number is readable.
 func liveSpeed(previous: Snapshot, current: Snapshot) -> Double? {
+    guard previous.model.modelID == current.model.modelID,
+          previous.active?.baseURL == current.active?.baseURL else { return nil }
     let dt = current.updatedAt.timeIntervalSince(previous.updatedAt)
     guard dt > 0.3, dt < 120 else { return nil }
     let before = Dictionary(previous.model.requests.map { ($0.id, $0.generatedTokens) }, uniquingKeysWith: { a, _ in a })
@@ -220,6 +222,7 @@ final class Store: ObservableObject {
             s.memory = systemMemory()
             s.updatedAt = Date()
             s.liveTokensPerSecond = liveSpeed(previous: previous, current: s)
+            CompanionModelSample.publish(s)
             let latest = wantUpdate ? latestReleaseTag(repo: repoSlug) : nil
             DispatchQueue.main.async {
                 if wantStore { self.lastSessionLookup = now; self.sessionStore = storePath }

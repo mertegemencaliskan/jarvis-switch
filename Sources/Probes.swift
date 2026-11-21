@@ -73,7 +73,7 @@ func probeActivity(cli: String?, env: [String: String]) -> ActivityStatus {
 
 // MARK: - Model server (Splash, LM Studio, Ollama, or any OpenAI-compatible server)
 
-struct ModelStatus {
+struct ModelStatus: Codable {
     var reachable = false
     var runtime = "unknown"
     var modelID: String?
@@ -101,9 +101,20 @@ struct ModelStatus {
     /// What the model server process takes in RAM (Activity Monitor's "Memory"), when known.
     var processFootprint: Double?
     var draftAcceptRate: Double?
+    var weightFormat: String?
+
+    var weightBadge: String? {
+        weightFormat ?? weightsBits.map { $0 == 16 ? "BF16" : "\(Int($0))-bit" }
+    }
+
+    var weightQuality: Double? {
+        // The generic estimates do not cover GGUF importance quantization.
+        guard weightFormat?.hasPrefix("IQ") != true else { return nil }
+        return weightsBits.map { Quality.weights(bits: $0) }
+    }
 }
 
-struct LiveRequest {
+struct LiveRequest: Codable {
     let id: Int
     let phase: String          // "prefill" (reading the prompt) or "decode" (writing)
     let promptTokens: Double
@@ -226,6 +237,11 @@ private func fillSplash(_ m: inout ModelStatus, _ o: [String: Any], root: String
                     promptTokens: num(r["prompt_tokens"]) ?? 0, promptProcessed: num(r["prompt_processed"]) ?? 0,
                     generatedTokens: num(r["generated_tokens"]) ?? 0)
     }
+    if let id = m.modelID, let format = Quality.ggufWeightFormat(from: id) {
+        m.weightFormat = format
+        m.weightsLabel = format + " (GGUF)"
+        m.weightsBits = Quality.bits(fromLabel: format)
+    }
     guard let pid = num(j(o, "instance", "pid")).map(Int.init) else { return }
     staticFactsLock.lock()
     let cached = staticFacts[pid]
@@ -234,8 +250,10 @@ private func fillSplash(_ m: inout ModelStatus, _ o: [String: Any], root: String
     if cached == nil {
         staticFactsLock.lock(); staticFacts = [pid: facts]; staticFactsLock.unlock()
     }
-    m.weightsLabel = facts.weightsLabel
-    m.weightsBits = facts.weightsBits ?? m.modelID.flatMap { Quality.bits(fromLabel: $0) }
+    if m.weightFormat == nil {
+        m.weightsLabel = facts.weightsLabel
+        m.weightsBits = facts.weightsBits ?? m.modelID.flatMap { Quality.bits(fromLabel: $0) }
+    }
     m.weightsOnDisk = facts.weightsOnDisk
     m.speculative = facts.speculative
     m.servedNames = facts.servedNames.filter { $0 != m.modelID }

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Jarvis Switch">
+  <meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
+  <title>Jarvis Switch</title>
+  <link rel="icon" href="/icon.png">
+  <link rel="apple-touch-icon" href="/icon.png">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="panel">
+    <header class="status_header" id="status_header" data-state="checking">
+      <span class="status_icon"><span id="status_icon" class="icon idle" aria-hidden="true"></span></span>
+      <div class="heading">
+        <h1 id="name">Jarvis</h1>
+        <p id="gateway">Connecting to the Mac…</p>
+      </div>
+      <span class="pill" id="state" role="status">Checking</span>
+    </header>
+
+    <section aria-labelledby="activity_label">
+      <h2 id="activity_label">Activity</h2>
+      <div class="card rows" id="activity"><p class="muted">Checking…</p></div>
+    </section>
+
+    <section id="context_section" aria-labelledby="context_label" hidden>
+      <h2 id="context_label">Context <span id="session"></span></h2>
+      <div class="card context">
+        <div class="between">
+          <span><strong id="context_tokens"></strong> <span class="muted" id="context_window"></span></span>
+          <strong id="context_percent"></strong>
+        </div>
+        <div class="meter" id="context_meter" aria-hidden="true"><span></span></div>
+        <div class="between context_notes">
+          <span id="phase"></span>
+          <span id="compactions"></span>
+        </div>
+      </div>
+    </section>
+
+    <section id="model_section" aria-labelledby="model_label" hidden>
+      <h2 id="model_label">Model <span id="runtime"></span></h2>
+      <div class="card model">
+        <div class="between">
+          <div class="model_name">
+            <strong id="model_name"></strong>
+            <span class="muted" id="model_id"></span>
+          </div>
+          <div class="badges" id="model_badges"></div>
+        </div>
+        <div class="tiles" id="tiles">
+          <div class="tile">
+            <span><i class="icon speed" aria-hidden="true"></i> Speed</span>
+            <strong id="speed">—</strong><small id="speed_note"></small>
+          </div>
+          <div class="tile">
+            <span><i class="icon timer" aria-hidden="true"></i> First token</span>
+            <strong id="first_token">—</strong><small id="first_token_note"></small>
+          </div>
+          <div class="tile">
+            <span><i class="icon stack" aria-hidden="true"></i> KV cache</span>
+            <strong id="cache">—</strong><small id="cache_note"></small>
+          </div>
+        </div>
+        <div class="meter_group" id="memory_section" hidden>
+          <div class="between"><span class="muted" id="memory_label">Memory</span><strong id="memory_free"></strong></div>
+          <div class="meter memory_meter" id="memory_meter" aria-hidden="true"><span></span><span></span></div>
+          <div class="legend" id="memory_legend"></div>
+        </div>
+        <div class="meter_group" id="quality_section" hidden>
+          <div class="between"><span class="muted" title="Estimated from published quantization studies">Quality kept vs BF16</span><strong id="quality"></strong></div>
+          <div class="meter" id="quality_meter" aria-hidden="true"><span></span></div>
+        </div>
+        <details id="details">
+          <summary>Details</summary>
+          <dl id="model_details"></dl>
+        </details>
+      </div>
+    </section>
+
+    <section id="learning_section" aria-labelledby="learning_label" hidden>
+      <h2 id="learning_label">Learning &amp; Hygiene <span id="learning_window"></span></h2>
+      <div class="card rows">
+        <div class="meter_group">
+          <div class="between"><span class="muted" id="learning_runs">24h runs</span><strong id="learning_clean"></strong></div>
+          <div class="meter" id="learning_meter" aria-hidden="true"><span></span></div>
+        </div>
+        <div id="learning_rows" class="rows"></div>
+      </div>
+    </section>
+
+    <section id="schedule_section" aria-labelledby="schedule_label" hidden>
+      <h2 id="schedule_label">Schedule <span id="schedule_count"></span></h2>
+      <div class="card schedule" id="schedule"></div>
+    </section>
+    <footer><span id="freshness"></span></footer>
+  </main>
+</body>
+</html>

@@ -104,7 +104,7 @@ func formatTokens(_ t: Double) -> String {
 
 /// Which model is in use and at what effort: the running session's model and thinking level, else the
 /// default model and OpenClaw's default thinking level.
-struct ActiveModel {
+struct ActiveModel: Codable {
     let alias: String?         // "provider/model" as OpenClaw names it
     let baseURL: String?
     let effort: String?

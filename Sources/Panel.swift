@@ -180,7 +180,7 @@ struct PanelView: View {
                         }
                     }
                     Spacer(minLength: 4)
-                    if let b = m.weightsBits { Badge(text: b >= 16 ? "BF16" : "\(Int(b))-bit") }
+                    if let badge = m.weightBadge { Badge(text: badge) }
                     if let e = store.snap.active?.effort { Badge(text: effortLabel(e)).help("Thinking effort of the model in use") }
                     if let note = m.note { Badge(text: note) }
                 }
@@ -236,8 +236,7 @@ struct PanelView: View {
     }
 
     @ViewBuilder private func qualityRow(_ m: ModelStatus) -> some View {
-        if let w = m.weightsBits {
-            let weights = Quality.weights(bits: w)
+        if let w = m.weightsBits, let weights = m.weightQuality {
             let kv = m.kvBits.map { Quality.kv(bits: $0) }
             let combined = weights * (kv ?? 100) / 100
             VStack(alignment: .leading, spacing: 6) {
@@ -261,7 +260,7 @@ struct PanelView: View {
         if !m.servedNames.isEmpty { DetailRow(label: "Served as", value: m.servedNames.joined(separator: ", ")) }
         DetailRow(label: "Weights", value: m.weightsLabel ?? "unknown")
         if let d = m.weightsOnDisk { DetailRow(label: "On disk", value: formatBytes(d)) }
-        if let b = m.weightsBits { DetailRow(label: "Weights keep", value: "\(Quality.percent(Quality.weights(bits: b))) of BF16 (estimate)") }
+        if let kept = m.weightQuality { DetailRow(label: "Weights keep", value: "\(Quality.percent(kept)) of BF16 (estimate)") }
         DetailRow(label: "KV cache", value: m.kvLabel ?? "not reported")
         if let a = m.kvAllocated {
             DetailRow(label: "KV memory", value: (m.kvActive.map { "\(formatBytes($0)) used of " } ?? "") + "\(formatBytes(a)) reserved")
@@ -416,6 +415,9 @@ struct StatusHeader: View {
 /// "mlx-community/Qwen3.8-27B-4bit" -> "Qwen3.8-27B".
 func shortModelName(_ id: String) -> String {
     var s = String(id.split(separator: "/").last ?? Substring(id))
+    if Quality.ggufWeightFormat(from: s) != nil, let separator = s.lastIndex(of: ":") {
+        s.removeSubrange(separator...)
+    }
     let suffix = "[-_.](\\d+[-_]?bits?|mlx|gguf|q\\d[\\w]*|iq\\d[\\w]*|int\\d+|fp16|bf16|f16|awq|gptq|mxfp4|instruct-mlx)$"
     while let r = s.range(of: suffix, options: [.regularExpression, .caseInsensitive]), r.lowerBound > s.startIndex {
         s.removeSubrange(r)

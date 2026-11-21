@@ -44,5 +44,12 @@ enum Quality {
         return nil
     }
 
+    /// Splash appends the actual GGUF weight format to the model ID, for example ":IQ3_XXS".
+    static func ggufWeightFormat(from id: String) -> String? {
+        guard let suffix = id.split(separator: ":").last, id.contains(":"),
+              suffix.range(of: #"^(?:IQ|Q)[2-8]_[A-Z0-9_]+$"#, options: .regularExpression) != nil else { return nil }
+        return String(suffix)
+    }
+
     static func percent(_ v: Double) -> String { v >= 100 ? "100%" : String(format: "≈%.1f%%", v) }
 }
