@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1 (2026-11-22)
+- Added the native **Learning & Hygiene** section directly to the macOS menu-bar panel (and `--status` / `--status --json`), matching the iOS/mobile companion: shows 24h clean-run rate, friction/failure counts, offline RSI benchmark pass rate, tracked projects, and latest auto-cleanup quarantine receipt.
+- Auto-detects `logs/run_metrics.jsonl` inside the configured `openclawConfig` directory (with an optional `metricsDir` override in `~/.config/jarvis-switch/config.json`) and stays hidden automatically on standard OpenClaw setups.
+- Refreshed light/dark and hero screenshots to include the Learning & Hygiene card.
+
 ## 0.5.0 (2026-11-22)
 - Read-only **Mobile companion** (`mobile/` + `--companion-stream`): view live status, context, model metrics, and full schedule from your phone on your local LAN or Tailnet, protected by a per-install viewer key / HttpOnly cookie or Tailscale identity header (`mobile/install.sh`).
 - Shared menu-bar model sample (`CompanionModelSample`) so the mobile companion reuses the menu bar's live reading without double-probing your model server.

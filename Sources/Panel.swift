@@ -44,6 +44,11 @@ struct PanelView: View {
             }
             SectionHeader(title: "Model", trailing: store.snap.model.reachable ? runtimeShort(store.snap.model.runtime) : nil)
             modelCard
+            if let l = store.snap.learning {
+                SectionHeader(title: "Learning & Hygiene",
+                              trailing: l.projectsTracked > 0 ? "\(l.projectsTracked) projects" : "\(l.windowHours)h")
+                learningCard(l)
+            }
             if store.resolved.offloadConfigured {
                 SectionHeader(title: "Pause")
                 pauseCard
@@ -272,6 +277,54 @@ struct PanelView: View {
         if let h = m.cacheHitRate { DetailRow(label: "Prompt cache", value: String(format: "%.0f%% hits", h * 100)) }
         if let sp = m.speculative { DetailRow(label: "Speculative", value: sp ? "On (draft model)" : "Off") }
         if m.weightsReleased { DetailRow(label: "Weights", value: "Released from memory") }
+    }
+
+    // MARK: learning
+
+    private func learningCard(_ l: LearningStatus) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(l.totalRuns) runs · \(l.frictionRuns) friction · \(l.failedRuns) failed")
+                        .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.85)
+                    Spacer(minLength: 4)
+                    Text("\(l.cleanPercent)% clean")
+                        .font(.system(size: 12.5, weight: .semibold)).monospacedDigit()
+                }
+                Meter(fraction: Double(l.cleanPercent) / 100, color: learningColor(l.cleanPercent))
+            }
+            if let ep = l.evalPassed, let et = l.evalTotal {
+                let ok = ep == et
+                InfoRow(icon: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+                        title: "RSI benchmark",
+                        tint: ok ? .green : .orange,
+                        trailing: "\(ep)/\(et) offline tests",
+                        trailingColor: ok ? .green : .orange)
+            }
+            if let d = l.lastCleanupDate {
+                InfoRow(icon: "sparkles",
+                        title: "Auto-cleanup",
+                        tint: .green,
+                        trailing: "\(l.lastCleanupCount) quarantined · \(shortISODate(d))")
+            }
+        }
+    }
+
+    private func learningColor(_ pct: Int) -> Color {
+        if pct >= 80 { return .green }
+        if pct >= 50 { return .blue }
+        return .orange
+    }
+
+    private func shortISODate(_ iso: String) -> String {
+        let p = DateFormatter()
+        p.locale = Locale(identifier: "en_US_POSIX")
+        p.dateFormat = "yyyy-MM-dd"
+        guard let date = p.date(from: iso) else { return iso }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US_POSIX")
+        out.dateFormat = "MMM d"
+        return out.string(from: date)
     }
 
     // MARK: pause

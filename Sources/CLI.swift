@@ -12,6 +12,7 @@ func probeOnce(_ r: Resolved, sampleSpeed: Bool = true) -> Snapshot {
     s.model = probeModel(baseURL: active.baseURL, configuredModel: active.alias)
     s.offload = readOffloadState(r.pauseMarker)
     s.memory = systemMemory()
+    s.learning = probeLearning(metricsDir: r.metricsDir)
     s.updatedAt = Date()
     if sampleSpeed && s.model.requests.contains(where: { $0.phase == "decode" }) {
         Thread.sleep(forTimeInterval: 1)
@@ -108,6 +109,21 @@ func statusJSON(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
         out["memory"] = mm
     }
 
+    if let l = s.learning {
+        var lr: [String: Any] = [
+            "windowHours": l.windowHours,
+            "totalRuns": l.totalRuns,
+            "cleanPercent": l.cleanPercent,
+            "frictionRuns": l.frictionRuns,
+            "failedRuns": l.failedRuns,
+            "projectsTracked": l.projectsTracked,
+        ]
+        if let ep = l.evalPassed { lr["evalPassed"] = ep }
+        if let et = l.evalTotal { lr["evalTotal"] = et }
+        if let d = l.lastCleanupDate { lr["lastCleanupDate"] = d; lr["lastCleanupCount"] = l.lastCleanupCount }
+        out["learning"] = lr
+    }
+
     var off: [String: Any] = ["configured": offloadConfigured, "active": s.offload.active]
     if let v = s.offload.mode { off["mode"] = v }
     if let v = s.offload.purpose { off["purpose"] = v }
@@ -175,6 +191,13 @@ func statusText(name: String, kind: Kind, _ s: Snapshot, offloadConfigured: Bool
         var line = "Memory: \(formatBytes(mem.free)) free of \(formatBytes(mem.total))"
         if let j = m.processFootprint ?? m.memoryInUse { line += " · \(name) \(formatBytes(min(j, mem.used))) · other \(formatBytes(max(0, mem.used - min(j, mem.used))))" }
         out.append(line)
+    }
+    if let l = s.learning {
+        let scope = l.projectsTracked > 0 ? "\(l.windowHours)h · \(l.projectsTracked) projects" : "\(l.windowHours)h"
+        out.append("Learning & Hygiene (\(scope))")
+        out.append("  \(l.totalRuns) runs · \(l.frictionRuns) friction · \(l.failedRuns) failed · \(l.cleanPercent)% clean")
+        if let ep = l.evalPassed, let et = l.evalTotal { out.append("  RSI benchmark: \(ep)/\(et) offline tests") }
+        if let d = l.lastCleanupDate { out.append("  Auto-cleanup: \(l.lastCleanupCount) quarantined · \(d)") }
     }
     if offloadConfigured {
         out.append("Pause: " + (s.offload.active ? "paused" + (s.offload.mode.map { " (\($0))" } ?? "") : "available"))

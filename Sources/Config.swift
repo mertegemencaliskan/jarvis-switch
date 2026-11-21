@@ -25,6 +25,7 @@ struct AppConfig: Codable, Equatable {
     var gatewayURL: String?
     var openclawCLI: String?
     var openclawConfig: String?
+    var metricsDir: String?
     var modelBaseURL: String?
     var dashboardCommand: [String]?
     var offload: OffloadConfig?
@@ -32,7 +33,7 @@ struct AppConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case schema = "$schema"
         case name, refreshSeconds, menuBarText, checkForUpdates, gatewayURL, openclawCLI, openclawConfig,
-             modelBaseURL, dashboardCommand, offload
+             metricsDir, modelBaseURL, dashboardCommand, offload
     }
 
     static let path = expandPath("~/.config/jarvis-switch/config.json")
@@ -88,6 +89,7 @@ struct Resolved {
     let gatewayURL: String
     let cli: String?
     let openclawConfigPath: String?
+    let metricsDir: String?
     let primaryModel: String?        // "provider/model"
     let providerBaseURL: String?     // e.g. http://127.0.0.1:8000/v1
     let dashboard: [String]?
@@ -137,13 +139,16 @@ struct Resolved {
             if let u = j(v, "baseUrl") as? String { providers[id] = u }
         }
         let thinking = j(oc, "agents", "defaults", "thinkingDefault") as? String
+        let metricsDir = blank(c.metricsDir).map(expandPath)
+            ?? cfgPath.map { ($0 as NSString).deletingLastPathComponent }
 
         return Resolved(name: blank(c.name) ?? "Jarvis",
                         refreshSeconds: min(max(c.refreshSeconds ?? 1, 1), 3600),
                         menuBarText: c.menuBarText ?? false,
                         checkForUpdates: c.checkForUpdates ?? true,
                         gatewayURL: (gateway ?? "http://127.0.0.1:18789").trimmingCharacters(in: CharacterSet(charactersIn: "/")),
-                        cli: cli, openclawConfigPath: cfgPath, primaryModel: primary, providerBaseURL: base,
+                        cli: cli, openclawConfigPath: cfgPath, metricsDir: metricsDir,
+                        primaryModel: primary, providerBaseURL: base,
                         dashboard: dashboard, offload: c.offload, providers: providers, thinkingDefault: thinking)
     }
 

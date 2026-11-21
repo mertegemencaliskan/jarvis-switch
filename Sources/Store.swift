@@ -9,6 +9,7 @@ struct Snapshot {
     var sessions: [SessionInfo] = []
     var active: ActiveModel?
     var memory: SystemMemory?
+    var learning: LearningStatus?
     /// Tokens per second measured between the last two refreshes while the model was writing.
     var liveTokensPerSecond: Double?
     var updatedAt = Date.distantPast
@@ -212,7 +213,10 @@ final class Store: ObservableObject {
             var s = previous
             s.gateway = probeGateway(cfg.gatewayURL, withReadiness: wantReady)
             if !wantReady { s.gateway.ready = previous.gateway.ready; s.gateway.failing = previous.gateway.failing }
-            if wantJobs { s.activity = s.gateway.live ? probeActivity(cli: cfg.cli, env: cfg.cliEnv) : ActivityStatus() }
+            if wantJobs {
+                s.activity = s.gateway.live ? probeActivity(cli: cfg.cli, env: cfg.cliEnv) : ActivityStatus()
+                s.learning = probeLearning(metricsDir: cfg.metricsDir)
+            }
             if wantStore, s.gateway.live { storePath = sessionStorePath(cli: cfg.cli, env: cfg.cliEnv) }
             s.sessions = storePath.flatMap { readSessions($0) } ?? []
             let active = activeModel(s.sessions, cfg)

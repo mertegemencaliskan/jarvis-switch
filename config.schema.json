@@ -37,6 +37,10 @@
       "description": "Path to OpenClaw's config file. Default: $OPENCLAW_CONFIG_PATH, then ~/.openclaw/openclaw.json. Used for the gateway port and the default model's server address.",
       "examples": ["~/.openclaw/openclaw.json"]
     },
+    "metricsDir": {
+      "type": "string",
+      "description": "Optional assistant directory containing logs/run_metrics.jsonl (plus optional eval_history.jsonl, cleanup_receipts.jsonl, and state/cleanup_registry.json). Defaults to the folder containing openclawConfig. The Learning & Hygiene card stays hidden unless logs/run_metrics.jsonl exists."
+    },
     "openclawCLI": {
       "type": "string",
       "description": "Path to the openclaw command (or a wrapper script that sets OPENCLAW_STATE_DIR / OPENCLAW_CONFIG_PATH). Default: ~/.openclaw/bin/openclaw, then Homebrew paths. Used for scheduled jobs and the session store.",

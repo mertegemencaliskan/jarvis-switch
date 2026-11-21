@@ -48,6 +48,9 @@ func demoSnapshot() -> Snapshot {
                     contextTokens: 262_144, compactions: 1, updatedAt: now.addingTimeInterval(-600)),
     ]
     s.memory = SystemMemory(total: 51_539_607_552, used: 36.4e9)
+    s.learning = LearningStatus(windowHours: 24, totalRuns: 42, cleanPercent: 95, frictionRuns: 2, failedRuns: 0,
+                                evalPassed: 12, evalTotal: 12, lastCleanupDate: "2026-11-22", lastCleanupCount: 6,
+                                projectsTracked: 3)
     s.active = ActiveModel(alias: "local/assistant_low", baseURL: nil, effort: "low", fromSession: true)
     s.updatedAt = now
     return s
@@ -159,8 +162,8 @@ struct HeroView: View {
                     .background(Color(nsColor: .windowBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
-                    .scaleEffect(0.72)
-                    .frame(width: 245, height: 600)
+                    .scaleEffect(0.59)
+                    .frame(width: 220, height: 600)
                     .shadow(color: .black.opacity(0.45), radius: 30, y: 16)
             }
             .padding(.horizontal, 70)
